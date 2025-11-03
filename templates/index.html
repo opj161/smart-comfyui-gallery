@@ -899,7 +899,8 @@
             width: 100%; 
             background: var(--surface-color); 
             overflow: hidden;
-            /* Aspect ratio container to prevent layout shift */
+            /* 4:3 aspect ratio container to prevent layout shift during image loading.
+               Images use object-fit: cover to fill the container while maintaining their aspect ratio. */
             aspect-ratio: 4 / 3;
         }
         .thumbnail-wrapper img, .thumbnail-wrapper video { 
@@ -947,7 +948,8 @@
             font-weight: 600;
             color: var(--text-color);
             margin-bottom: 0.5rem;
-            min-height: 2.8rem; /* Reserve space even if prompt is short */
+            /* Reserve space for 2 lines: font-size * line-height * 2 = 0.95 * 1.4 * 2 ≈ 2.66rem, adding small buffer */
+            min-height: calc(0.95rem * var(--line-height-tight) * 2);
         }
         .filename-subtitle {
             display: block;
@@ -1113,7 +1115,6 @@
             background: var(--danger-color);
             color: white;
         }
-        .favorite-btn.favorited { background: var(--favorite-color); color: #000; border-color: var(--favorite-color); }
         .duration-overlay { 
             position: absolute; 
             bottom: 10px; 
@@ -1545,6 +1546,9 @@
           'modal-open': isUploadOpen || isSummaryOpen,
           'sidebar-expanded': sidebarExpanded
       }">
+    <!-- Skip to main content for keyboard navigation accessibility -->
+    <a href="#gallery-anchor" class="skip-to-main">Skip to main content</a>
+    
     <div id="notification-container">
         <template x-for="notification in $store.notifications.list" :key="notification.id">
             <div class="notification show"
