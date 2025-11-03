@@ -899,7 +899,7 @@
             width: 100%; 
             background: var(--surface-color); 
             overflow: hidden;
-            /* 4:3 aspect ratio provides consistent container size to prevent layout shift during loading.
+            /* 4/3 aspect ratio provides consistent container size to prevent layout shift during loading.
                Images use object-fit: cover to fill the container, which may crop non-4:3 images. */
             aspect-ratio: 4 / 3;
         }
@@ -948,8 +948,7 @@
             font-weight: 600;
             color: var(--text-color);
             margin-bottom: 0.5rem;
-            /* Dynamically calculated: font-size * line-height * 2 lines.
-               Actual value depends on --line-height-tight (1.4), resulting in ~2.66rem. */
+            /* Dynamically calculated: 0.95rem * 1.4 (line-height-tight) * 2 = 2.66rem */
             min-height: calc(0.95rem * var(--line-height-tight) * 2);
         }
         .filename-subtitle {
@@ -1295,7 +1294,6 @@
         #lightbox-media { display: flex; align-items: center; justify-content: center; max-width: 95vw; max-height: 90vh; }
         #lightbox-media img, #lightbox-media video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; box-shadow: var(--shadow-lg); cursor: grab; }
         #backToTopBtn { 
-            display: none; /* Hidden by default, Alpine.js will override to show when scrolled */
             position: fixed; 
             bottom: 110px; 
             right: 30px; 
@@ -1311,13 +1309,10 @@
             box-shadow: var(--shadow-lg);
             width: 52px;
             height: 52px;
-            /* Flex layout for centering icon */
+            /* Flex layout for centering icon, visibility controlled by Alpine.js x-show */
+            display: flex;
             align-items: center;
             justify-content: center;
-        }
-        /* When visible (controlled by Alpine.js), button uses flex display */
-        #backToTopBtn[style*="display: block"] { 
-            display: flex !important;
         }
         #backToTopBtn:hover {
             transform: translateY(-4px);
