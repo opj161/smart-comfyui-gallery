@@ -899,6 +899,39 @@ _cache_lock = threading.Lock()
 CACHE_DURATION_SECONDS = 300  # 5 minutes
 # ---------------------------------------------
 
+# --- CONFIGURATION VALIDATION ---
+def validate_config():
+    """
+    Validates critical configuration values on startup.
+    Returns (is_valid, error_messages)
+    """
+    errors = []
+    
+    # Validate numeric configs
+    if not isinstance(app.config.get('PAGE_SIZE', 0), int) or app.config['PAGE_SIZE'] < 1:
+        errors.append("PAGE_SIZE must be a positive integer")
+    
+    if not isinstance(app.config.get('THUMBNAIL_WIDTH', 0), int) or app.config['THUMBNAIL_WIDTH'] < 50:
+        errors.append("THUMBNAIL_WIDTH must be at least 50 pixels")
+    
+    # Validate paths when initialized
+    if app.config.get('BASE_OUTPUT_PATH'):
+        if not os.path.isdir(app.config['BASE_OUTPUT_PATH']):
+            errors.append(f"BASE_OUTPUT_PATH does not exist: {app.config['BASE_OUTPUT_PATH']}")
+    
+    if app.config.get('BASE_INPUT_PATH'):
+        if not os.path.isdir(app.config['BASE_INPUT_PATH']):
+            errors.append(f"BASE_INPUT_PATH does not exist: {app.config['BASE_INPUT_PATH']}")
+    
+    # Validate extension lists
+    for key in ['VIDEO_EXTENSIONS', 'IMAGE_EXTENSIONS', 'ANIMATED_IMAGE_EXTENSIONS', 'AUDIO_EXTENSIONS']:
+        if not isinstance(app.config.get(key, []), list):
+            errors.append(f"{key} must be a list")
+    
+    return len(errors) == 0, errors
+
+# ---------------------------------------------
+
 # Request counter for stats
 request_counter = {'count': 0, 'lock': threading.Lock()}
 
@@ -2380,6 +2413,70 @@ def initialize_gallery(flask_app):
 
 
 # --- FLASK ROUTES ---
+
+@app.route('/galleryout/health')
+def health_check():
+    """
+    Health check endpoint for monitoring and load balancers.
+    Returns service status, database connectivity, and basic metrics.
+    """
+    try:
+        health_status = {
+            'status': 'healthy',
+            'version': '1.50.0',
+            'timestamp': datetime.now().isoformat(),
+            'checks': {}
+        }
+        
+        # Check database connectivity
+        try:
+            conn = get_db()
+            conn.execute('SELECT 1').fetchone()
+            health_status['checks']['database'] = 'ok'
+        except Exception as e:
+            health_status['status'] = 'degraded'
+            health_status['checks']['database'] = f'error: {str(e)}'
+        
+        # Check critical paths
+        paths_ok = True
+        if app.config.get('DATABASE_FILE'):
+            if not os.path.exists(app.config['DATABASE_FILE']):
+                health_status['status'] = 'degraded'
+                health_status['checks']['database_file'] = 'missing'
+                paths_ok = False
+            else:
+                health_status['checks']['database_file'] = 'ok'
+        
+        if app.config.get('BASE_OUTPUT_PATH'):
+            if not os.path.isdir(app.config['BASE_OUTPUT_PATH']):
+                health_status['status'] = 'unhealthy'
+                health_status['checks']['output_path'] = 'missing'
+                paths_ok = False
+            else:
+                health_status['checks']['output_path'] = 'ok'
+        
+        # Quick metrics
+        try:
+            conn = get_db()
+            file_count = conn.execute('SELECT COUNT(*) as count FROM files').fetchone()['count']
+            health_status['metrics'] = {
+                'total_files': file_count,
+                'uptime_seconds': int(time.time() - app.config.get('START_TIME', time.time()))
+            }
+        except:
+            pass
+        
+        status_code = 200 if health_status['status'] == 'healthy' else 503
+        return jsonify(health_status), status_code
+    
+    except Exception as e:
+        logging.error(f"Health check failed: {e}", exc_info=True)
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 503
+
 @app.route('/galleryout/')
 @app.route('/')
 def gallery_redirect_base():
@@ -3049,15 +3146,6 @@ def move_batch():
     except Exception as e:
         logging.error(f"Unexpected error in move_batch: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
-            failed_files.append(filename_for_error)
-            print(f"ERROR: Failed to move file {filename_for_error}. Reason: {e}")
-            continue
-    conn.commit()
-    
-    message = f"Successfully moved {moved_count} file(s)."
-    if renamed_count > 0: message += f" {renamed_count} were renamed to avoid conflicts."
-    if failed_files: message += f" Failed to move {len(failed_files)} file(s)."
-    return jsonify({'status': 'partial_success' if failed_files else 'success', 'message': message})
 
 @app.route('/galleryout/delete_batch', methods=['POST'])
 @require_initialization
@@ -3099,25 +3187,65 @@ def delete_batch():
 @app.route('/galleryout/favorite_batch', methods=['POST'])
 @require_initialization
 def favorite_batch():
-    data = request.json
-    file_ids, status = data.get('file_ids', []), data.get('status', False)
-    if not file_ids: return jsonify({'status': 'error', 'message': 'No files selected'}), 400
-    conn = get_db()
-    placeholders = ','.join('?' * len(file_ids))
-    conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
-    conn.commit()
-    return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
+    try:
+        # Validate request payload
+        if not request.json:
+            return jsonify({'status': 'error', 'message': 'No JSON payload provided.'}), 400
+        
+        data = request.json
+        file_ids, status = data.get('file_ids', []), data.get('status', False)
+        
+        # Validate file_ids
+        if not file_ids or not isinstance(file_ids, list):
+            return jsonify({'status': 'error', 'message': 'Invalid or missing file_ids.'}), 400
+        
+        if len(file_ids) > 1000:  # Prevent abuse
+            return jsonify({'status': 'error', 'message': 'Too many files selected (max 1000).'}), 400
+        
+        # Validate status
+        if not isinstance(status, bool):
+            return jsonify({'status': 'error', 'message': 'Invalid status value (must be boolean).'}), 400
+        
+        conn = get_db()
+        placeholders = ','.join('?' * len(file_ids))
+        conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
+        conn.commit()
+        
+        return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
+    
+    except sqlite3.Error as e:
+        logging.error(f"Database error in favorite_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Database error occurred.'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in favorite_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 @app.route('/galleryout/toggle_favorite/<string:file_id>', methods=['POST'])
 @require_initialization
 def toggle_favorite(file_id):
-    conn = get_db()
-    current = conn.execute("SELECT is_favorite FROM files WHERE id = ?", (file_id,)).fetchone()
-    if not current: abort(404)
-    new_status = 1 - current['is_favorite']
-    conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
-    conn.commit()
-    return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
+    try:
+        # Validate file_id format
+        if not file_id or not isinstance(file_id, str) or len(file_id) > 64:
+            return jsonify({'status': 'error', 'message': 'Invalid file ID.'}), 400
+        
+        conn = get_db()
+        current = conn.execute("SELECT is_favorite FROM files WHERE id = ?", (file_id,)).fetchone()
+        
+        if not current:
+            return jsonify({'status': 'error', 'message': 'File not found.'}), 404
+        
+        new_status = 1 - current['is_favorite']
+        conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
+        conn.commit()
+        
+        return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
+    
+    except sqlite3.Error as e:
+        logging.error(f"Database error in toggle_favorite: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Database error occurred.'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in toggle_favorite: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 # --- NEW FEATURE: RENAME FILE ---
 @app.route('/galleryout/rename_file/<string:file_id>', methods=['POST'])
@@ -3504,6 +3632,7 @@ if __name__ == '__main__':
     app.config['BASE_INPUT_PATH'] = args.input_path
     app.config['SERVER_PORT'] = args.port
     app.config['FFPROBE_MANUAL_PATH'] = args.ffprobe_path
+    app.config['START_TIME'] = time.time()  # For uptime tracking
     
     # Update ALL_MEDIA_EXTENSIONS after potential config updates
     app.config['ALL_MEDIA_EXTENSIONS'] = (
