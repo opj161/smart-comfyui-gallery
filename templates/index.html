@@ -2689,6 +2689,7 @@
                         this.populateWorkflowFilters();
                         this.startSyncProcess(false);
                         this.handleDeepLinking();
+                        this.initLazyLoading();
                     });
                     
                     // Back to top button state - managed by Alpine
@@ -3740,6 +3741,59 @@
                 
                 scrollToTop() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+                
+                // ===================================
+                // DEBOUNCE UTILITY
+                // ===================================
+                debounce(func, wait) {
+                    let timeout;
+                    return function executedFunction(...args) {
+                        const later = () => {
+                            clearTimeout(timeout);
+                            func(...args);
+                        };
+                        clearTimeout(timeout);
+                        timeout = setTimeout(later, wait);
+                    };
+                },
+                
+                // ===================================
+                // LAZY LOADING FOR IMAGES
+                // ===================================
+                initLazyLoading() {
+                    // Use Intersection Observer for efficient lazy loading
+                    if ('IntersectionObserver' in window) {
+                        const imageObserver = new IntersectionObserver((entries, observer) => {
+                            entries.forEach(entry => {
+                                if (entry.isIntersecting) {
+                                    const img = entry.target;
+                                    const src = img.getAttribute('data-src');
+                                    if (src) {
+                                        img.src = src;
+                                        img.removeAttribute('data-src');
+                                        observer.unobserve(img);
+                                    }
+                                }
+                            });
+                        }, {
+                            rootMargin: '50px 0px',  // Start loading slightly before image enters viewport
+                            threshold: 0.01
+                        });
+                        
+                        // Observe all images with data-src attribute
+                        this.$nextTick(() => {
+                            document.querySelectorAll('img[data-src]').forEach(img => {
+                                imageObserver.observe(img);
+                            });
+                        });
+                    } else {
+                        // Fallback for browsers without IntersectionObserver
+                        document.querySelectorAll('img[data-src]').forEach(img => {
+                            img.src = img.getAttribute('data-src');
+                            img.removeAttribute('data-src');
+                        });
+                    }
                 }
             };
         }
