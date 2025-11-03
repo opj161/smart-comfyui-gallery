@@ -899,6 +899,39 @@ _cache_lock = threading.Lock()
 CACHE_DURATION_SECONDS = 300  # 5 minutes
 # ---------------------------------------------
 
+# --- CONFIGURATION VALIDATION ---
+def validate_config():
+    """
+    Validates critical configuration values on startup.
+    Returns (is_valid, error_messages)
+    """
+    errors = []
+    
+    # Validate numeric configs
+    if not isinstance(app.config.get('PAGE_SIZE', 0), int) or app.config['PAGE_SIZE'] < 1:
+        errors.append("PAGE_SIZE must be a positive integer")
+    
+    if not isinstance(app.config.get('THUMBNAIL_WIDTH', 0), int) or app.config['THUMBNAIL_WIDTH'] < 50:
+        errors.append("THUMBNAIL_WIDTH must be at least 50 pixels")
+    
+    # Validate paths when initialized
+    if app.config.get('BASE_OUTPUT_PATH'):
+        if not os.path.isdir(app.config['BASE_OUTPUT_PATH']):
+            errors.append(f"BASE_OUTPUT_PATH does not exist: {app.config['BASE_OUTPUT_PATH']}")
+    
+    if app.config.get('BASE_INPUT_PATH'):
+        if not os.path.isdir(app.config['BASE_INPUT_PATH']):
+            errors.append(f"BASE_INPUT_PATH does not exist: {app.config['BASE_INPUT_PATH']}")
+    
+    # Validate extension lists
+    for key in ['VIDEO_EXTENSIONS', 'IMAGE_EXTENSIONS', 'ANIMATED_IMAGE_EXTENSIONS', 'AUDIO_EXTENSIONS']:
+        if not isinstance(app.config.get(key, []), list):
+            errors.append(f"{key} must be a list")
+    
+    return len(errors) == 0, errors
+
+# ---------------------------------------------
+
 # Request counter for stats
 request_counter = {'count': 0, 'lock': threading.Lock()}
 
@@ -2380,6 +2413,70 @@ def initialize_gallery(flask_app):
 
 
 # --- FLASK ROUTES ---
+
+@app.route('/galleryout/health')
+def health_check():
+    """
+    Health check endpoint for monitoring and load balancers.
+    Returns service status, database connectivity, and basic metrics.
+    """
+    try:
+        health_status = {
+            'status': 'healthy',
+            'version': '1.50.0',
+            'timestamp': datetime.now().isoformat(),
+            'checks': {}
+        }
+        
+        # Check database connectivity
+        try:
+            conn = get_db()
+            conn.execute('SELECT 1').fetchone()
+            health_status['checks']['database'] = 'ok'
+        except Exception as e:
+            health_status['status'] = 'degraded'
+            health_status['checks']['database'] = f'error: {str(e)}'
+        
+        # Check critical paths
+        paths_ok = True
+        if app.config.get('DATABASE_FILE'):
+            if not os.path.exists(app.config['DATABASE_FILE']):
+                health_status['status'] = 'degraded'
+                health_status['checks']['database_file'] = 'missing'
+                paths_ok = False
+            else:
+                health_status['checks']['database_file'] = 'ok'
+        
+        if app.config.get('BASE_OUTPUT_PATH'):
+            if not os.path.isdir(app.config['BASE_OUTPUT_PATH']):
+                health_status['status'] = 'unhealthy'
+                health_status['checks']['output_path'] = 'missing'
+                paths_ok = False
+            else:
+                health_status['checks']['output_path'] = 'ok'
+        
+        # Quick metrics
+        try:
+            conn = get_db()
+            file_count = conn.execute('SELECT COUNT(*) as count FROM files').fetchone()['count']
+            health_status['metrics'] = {
+                'total_files': file_count,
+                'uptime_seconds': int(time.time() - app.config.get('START_TIME', time.time()))
+            }
+        except:
+            pass
+        
+        status_code = 200 if health_status['status'] == 'healthy' else 503
+        return jsonify(health_status), status_code
+    
+    except Exception as e:
+        logging.error(f"Health check failed: {e}", exc_info=True)
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 503
+
 @app.route('/galleryout/')
 @app.route('/')
 def gallery_redirect_base():
@@ -2742,71 +2839,82 @@ def load_more():
     Load more files with TRUE SQL PAGINATION (v1.41.0)
     Queries only the requested page from database instead of caching all results.
     """
-    page = request.args.get('page', 2, type=int)
-    folder_key = request.args.get('folder_key', '_root_')
-    
-    # Validate input
-    if page < 1:
-        return jsonify(files=[], total=0)
-    
-    # Get folder configuration
-    folders = get_dynamic_folder_config()
-    if folder_key not in folders:
-        return jsonify(files=[], total=0)
-    
-    current_folder_info = folders[folder_key]
-    folder_path = current_folder_info['path']
-    
-    offset = (page - 1) * FILES_PER_PAGE
-    
-    # Rebuild query with same filters as gallery_view
-    conn = get_db()
+    try:
+        page = request.args.get('page', 2, type=int)
+        folder_key = request.args.get('folder_key', '_root_')
+        
+        # Validate input
+        if page < 1:
+            logging.warning(f"Invalid page number requested: {page}")
+            return jsonify({'files': [], 'total': 0, 'error': 'Invalid page number'}), 400
+        
+        # Get folder configuration
+        folders = get_dynamic_folder_config()
+        if folder_key not in folders:
+            logging.warning(f"Folder key not found: {folder_key}")
+            return jsonify({'files': [], 'total': 0, 'error': 'Folder not found'}), 404
+        
+        current_folder_info = folders[folder_key]
+        folder_path = current_folder_info['path']
+        
+        offset = (page - 1) * FILES_PER_PAGE
+        
+        # Rebuild query with same filters as gallery_view
+        conn = get_db()
 
-    # Base conditions for this view (scoping to the current folder)
-    conditions = ["f.path LIKE ?"]
-    params = [folder_path + os.sep + '%']
+        # Base conditions for this view (scoping to the current folder)
+        conditions = ["f.path LIKE ?"]
+        params = [folder_path + os.sep + '%']
 
-    # Get all filter conditions from the centralized helper function
-    filter_conditions, filter_params = _build_filter_conditions(request.args)
-    conditions.extend(filter_conditions)
-    params.extend(filter_params)
+        # Get all filter conditions from the centralized helper function
+        filter_conditions, filter_params = _build_filter_conditions(request.args)
+        conditions.extend(filter_conditions)
+        params.extend(filter_params)
 
-    sort_by = 'name' if request.args.get('sort_by') == 'name' else 'mtime'
-    sort_order = 'asc' if request.args.get('sort_order', 'desc').lower() == 'asc' else 'desc'
+        sort_by = 'name' if request.args.get('sort_by') == 'name' else 'mtime'
+        sort_order = 'asc' if request.args.get('sort_order', 'desc').lower() == 'asc' else 'desc'
 
-    sort_direction = "ASC" if sort_order == 'asc' else "DESC"
+        sort_direction = "ASC" if sort_order == 'asc' else "DESC"
+        
+        # Get total count
+        count_query = f"""
+            SELECT COUNT(DISTINCT f.id) as total
+            FROM files f 
+            WHERE {' AND '.join(conditions)}
+        """
+        total_count_row = conn.execute(count_query, params).fetchone()
+        total_count = total_count_row['total'] if total_count_row else 0
+        
+        if offset >= total_count:
+            return jsonify(files=[], total=total_count)
+        
+        # Get only the requested page
+        query_paginated = f"""
+            SELECT f.*,
+                   COALESCE((SELECT COUNT(DISTINCT wm.sampler_index) 
+                             FROM workflow_metadata wm 
+                             WHERE wm.file_id = f.id), 0) as sampler_count
+            FROM files f 
+            WHERE {' AND '.join(conditions)} 
+            ORDER BY f.{sort_by} {sort_direction}
+            LIMIT ? OFFSET ?
+        """
+        
+        paginated_params = params + [FILES_PER_PAGE, offset]
+        page_files_raw = conn.execute(query_paginated, paginated_params).fetchall()
+        
+        folder_path_norm = os.path.normpath(folder_path)
+        files_to_return = [dict(row) for row in page_files_raw if os.path.normpath(os.path.dirname(row['path'])) == folder_path_norm]
+        
+        return jsonify(files=files_to_return, total=total_count)
     
-    # Get total count
-    count_query = f"""
-        SELECT COUNT(DISTINCT f.id) as total
-        FROM files f 
-        WHERE {' AND '.join(conditions)}
-    """
-    total_count_row = conn.execute(count_query, params).fetchone()
-    total_count = total_count_row['total'] if total_count_row else 0
-    
-    if offset >= total_count:
-        return jsonify(files=[], total=total_count)
-    
-    # Get only the requested page
-    query_paginated = f"""
-        SELECT f.*,
-               COALESCE((SELECT COUNT(DISTINCT wm.sampler_index) 
-                         FROM workflow_metadata wm 
-                         WHERE wm.file_id = f.id), 0) as sampler_count
-        FROM files f 
-        WHERE {' AND '.join(conditions)} 
-        ORDER BY f.{sort_by} {sort_direction}
-        LIMIT ? OFFSET ?
-    """
-    
-    paginated_params = params + [FILES_PER_PAGE, offset]
-    page_files_raw = conn.execute(query_paginated, paginated_params).fetchall()
-    
-    folder_path_norm = os.path.normpath(folder_path)
-    files_to_return = [dict(row) for row in page_files_raw if os.path.normpath(os.path.dirname(row['path'])) == folder_path_norm]
-    
-    return jsonify(files=files_to_return, total=total_count)
+    except sqlite3.Error as e:
+        logging.error(f"Database error in load_more: {e}", exc_info=True)
+        return jsonify({'files': [], 'total': 0, 'error': 'Database error occurred'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in load_more: {e}", exc_info=True)
+        return jsonify({'files': [], 'total': 0, 'error': 'An unexpected error occurred'}), 500
+
 
 @app.route('/galleryout/file_location/<string:file_id>')
 @require_initialization
@@ -2947,65 +3055,97 @@ def _get_unique_filepath(destination_folder, filename):
 @app.route('/galleryout/move_batch', methods=['POST'])
 @require_initialization
 def move_batch():
-    data = request.json
-    file_ids, dest_key = data.get('file_ids', []), data.get('destination_folder')
-    folders = get_dynamic_folder_config()
-    if not all([file_ids, dest_key, dest_key in folders]):
-        return jsonify({'status': 'error', 'message': 'Invalid data provided.'}), 400
-    moved_count, renamed_count, failed_files, dest_path_folder = 0, 0, [], folders[dest_key]['path']
-    
-    conn = get_db()
-    for file_id in file_ids:
-        source_path = None
-        savepoint = None
-        try:
-            # Create a savepoint for atomic rollback (Issue #6)
-            savepoint = f"move_{file_id}"
-            conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        # Validate request payload
+        if not request.json:
+            return jsonify({'status': 'error', 'message': 'No JSON payload provided.'}), 400
+        
+        data = request.json
+        file_ids, dest_key = data.get('file_ids', []), data.get('destination_folder')
+        
+        # Validate file_ids
+        if not file_ids or not isinstance(file_ids, list):
+            return jsonify({'status': 'error', 'message': 'Invalid or missing file_ids.'}), 400
+        
+        if len(file_ids) > 1000:  # Prevent abuse with too many files
+            return jsonify({'status': 'error', 'message': 'Too many files selected (max 1000).'}), 400
+        
+        # Validate destination folder
+        folders = get_dynamic_folder_config()
+        if not dest_key or dest_key not in folders:
+            return jsonify({'status': 'error', 'message': 'Invalid destination folder.'}), 400
+        
+        moved_count, renamed_count, failed_files, dest_path_folder = 0, 0, [], folders[dest_key]['path']
+        
+        # Validate destination path exists
+        if not os.path.isdir(dest_path_folder):
+            return jsonify({'status': 'error', 'message': 'Destination folder does not exist on disk.'}), 400
+        
+        conn = get_db()
+        for file_id in file_ids:
+            source_path = None
+            savepoint = None
+            try:
+                # Sanitize file_id to prevent SQL injection
+                if not isinstance(file_id, str) or len(file_id) > 64:
+                    failed_files.append(f"Invalid ID: {file_id}")
+                    continue
                 
-            file_info = conn.execute("SELECT path, name FROM files WHERE id = ?", (file_id,)).fetchone()
-            if not file_info:
-                failed_files.append(f"ID {file_id} not found in DB")
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-                continue
-            source_path, source_filename = file_info['path'], file_info['name']
-            if not os.path.exists(source_path):
-                failed_files.append(f"{source_filename} (not found on disk)")
-                conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-                continue
-                
-            final_dest_path = _get_unique_filepath(dest_path_folder, source_filename)
-            final_filename = os.path.basename(final_dest_path)
-            if final_filename != source_filename: renamed_count += 1
-                
-            # CRITICAL: Perform file operation BEFORE DB commit
-            shutil.move(source_path, final_dest_path)
-                
-            # Only update DB after successful file move
-            new_id = hashlib.md5(final_dest_path.encode()).hexdigest()
-            conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, final_dest_path, final_filename, file_id))
-            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            moved_count += 1
-        except Exception as e:
-            # Rollback database changes if file operation failed
-            if savepoint:
-                try:
-                    conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                # Create a savepoint for atomic rollback (Issue #6)
+                savepoint = f"move_{file_id[:8]}"  # Truncate for safety
+                conn.execute(f"SAVEPOINT {savepoint}")
+                    
+                file_info = conn.execute("SELECT path, name FROM files WHERE id = ?", (file_id,)).fetchone()
+                if not file_info:
+                    failed_files.append(f"ID {file_id[:8]}... not found in DB")
                     conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-                except Exception as rb_error:
-                    print(f"ERROR: Failed to rollback savepoint: {rb_error}")
-                
-            filename_for_error = os.path.basename(source_path) if source_path else f"ID {file_id}"
-            failed_files.append(filename_for_error)
-            print(f"ERROR: Failed to move file {filename_for_error}. Reason: {e}")
-            continue
-    conn.commit()
+                    continue
+                source_path, source_filename = file_info['path'], file_info['name']
+                if not os.path.exists(source_path):
+                    failed_files.append(f"{source_filename} (not found on disk)")
+                    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    continue
+                    
+                final_dest_path = _get_unique_filepath(dest_path_folder, source_filename)
+                final_filename = os.path.basename(final_dest_path)
+                if final_filename != source_filename: renamed_count += 1
+                    
+                # CRITICAL: Perform file operation BEFORE DB commit
+                shutil.move(source_path, final_dest_path)
+                    
+                # Only update DB after successful file move
+                new_id = hashlib.md5(final_dest_path.encode()).hexdigest()
+                conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, final_dest_path, final_filename, file_id))
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                moved_count += 1
+            except Exception as e:
+                # Rollback database changes if file operation failed
+                if savepoint:
+                    try:
+                        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    except Exception as rb_error:
+                        logging.error(f"Failed to rollback savepoint: {rb_error}")
+                    
+                filename_for_error = os.path.basename(source_path) if source_path else f"ID {file_id[:8]}..."
+                failed_files.append(filename_for_error)
+                logging.error(f"Failed to move file {filename_for_error}: {e}")
+                continue
+        conn.commit()
+        
+        message = f"Successfully moved {moved_count} file(s)."
+        if renamed_count > 0: message += f" {renamed_count} were renamed to avoid conflicts."
+        if failed_files: message += f" Failed to move {len(failed_files)} file(s)."
+        
+        return jsonify({'status': 'partial_success' if failed_files else 'success', 'message': message})
     
-    message = f"Successfully moved {moved_count} file(s)."
-    if renamed_count > 0: message += f" {renamed_count} were renamed to avoid conflicts."
-    if failed_files: message += f" Failed to move {len(failed_files)} file(s)."
-    return jsonify({'status': 'partial_success' if failed_files else 'success', 'message': message})
+    except sqlite3.Error as e:
+        logging.error(f"Database error in move_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Database error occurred.'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in move_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 @app.route('/galleryout/delete_batch', methods=['POST'])
 @require_initialization
@@ -3047,25 +3187,65 @@ def delete_batch():
 @app.route('/galleryout/favorite_batch', methods=['POST'])
 @require_initialization
 def favorite_batch():
-    data = request.json
-    file_ids, status = data.get('file_ids', []), data.get('status', False)
-    if not file_ids: return jsonify({'status': 'error', 'message': 'No files selected'}), 400
-    conn = get_db()
-    placeholders = ','.join('?' * len(file_ids))
-    conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
-    conn.commit()
-    return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
+    try:
+        # Validate request payload
+        if not request.json:
+            return jsonify({'status': 'error', 'message': 'No JSON payload provided.'}), 400
+        
+        data = request.json
+        file_ids, status = data.get('file_ids', []), data.get('status', False)
+        
+        # Validate file_ids
+        if not file_ids or not isinstance(file_ids, list):
+            return jsonify({'status': 'error', 'message': 'Invalid or missing file_ids.'}), 400
+        
+        if len(file_ids) > 1000:  # Prevent abuse
+            return jsonify({'status': 'error', 'message': 'Too many files selected (max 1000).'}), 400
+        
+        # Validate status
+        if not isinstance(status, bool):
+            return jsonify({'status': 'error', 'message': 'Invalid status value (must be boolean).'}), 400
+        
+        conn = get_db()
+        placeholders = ','.join('?' * len(file_ids))
+        conn.execute(f"UPDATE files SET is_favorite = ? WHERE id IN ({placeholders})", [1 if status else 0] + file_ids)
+        conn.commit()
+        
+        return jsonify({'status': 'success', 'message': f"Updated favorites for {len(file_ids)} files."})
+    
+    except sqlite3.Error as e:
+        logging.error(f"Database error in favorite_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Database error occurred.'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in favorite_batch: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 @app.route('/galleryout/toggle_favorite/<string:file_id>', methods=['POST'])
 @require_initialization
 def toggle_favorite(file_id):
-    conn = get_db()
-    current = conn.execute("SELECT is_favorite FROM files WHERE id = ?", (file_id,)).fetchone()
-    if not current: abort(404)
-    new_status = 1 - current['is_favorite']
-    conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
-    conn.commit()
-    return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
+    try:
+        # Validate file_id format
+        if not file_id or not isinstance(file_id, str) or len(file_id) > 64:
+            return jsonify({'status': 'error', 'message': 'Invalid file ID.'}), 400
+        
+        conn = get_db()
+        current = conn.execute("SELECT is_favorite FROM files WHERE id = ?", (file_id,)).fetchone()
+        
+        if not current:
+            return jsonify({'status': 'error', 'message': 'File not found.'}), 404
+        
+        new_status = 1 - current['is_favorite']
+        conn.execute("UPDATE files SET is_favorite = ? WHERE id = ?", (new_status, file_id))
+        conn.commit()
+        
+        return jsonify({'status': 'success', 'is_favorite': bool(new_status)})
+    
+    except sqlite3.Error as e:
+        logging.error(f"Database error in toggle_favorite: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Database error occurred.'}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error in toggle_favorite: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 # --- NEW FEATURE: RENAME FILE ---
 @app.route('/galleryout/rename_file/<string:file_id>', methods=['POST'])
@@ -3452,6 +3632,7 @@ if __name__ == '__main__':
     app.config['BASE_INPUT_PATH'] = args.input_path
     app.config['SERVER_PORT'] = args.port
     app.config['FFPROBE_MANUAL_PATH'] = args.ffprobe_path
+    app.config['START_TIME'] = time.time()  # For uptime tracking
     
     # Update ALL_MEDIA_EXTENSIONS after potential config updates
     app.config['ALL_MEDIA_EXTENSIONS'] = (
