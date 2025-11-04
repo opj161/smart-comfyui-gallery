@@ -1,6 +1,24 @@
 # main.py
+
+# nuitka-project: --mode=onefile
+# nuitka-project: --onefile-tempdir-spec="{CACHE_DIR}/{PRODUCT}/{VERSION}"
+# nuitka-project: --output-dir=dist
+#
+# nuitka-project: --include-data-dir=templates=templates
+# nuitka-project: --include-data-dir=static=static
+# nuitka-project: --include-data-file=bin/ffprobe.exe=ffprobe.exe
+#
+# nuitka-project: --windows-console-mode=disable
+# nuitka-project: --windows-icon-from-ico=assets/icon.ico
+# nuitka-project: --product-name="ComfyGallery"
+# nuitka-project: --company-name="ComfyGallery Team"
+# nuitka-project: --file-version="2.1.0"
+# nuitka-project: --product-version="2.1.0"
+# nuitka-project: --file-description="ComfyUI Media Gallery"
+
+
 """
-SmartGallery Desktop Application Entry Point
+ComfyGallery Desktop Application Entry Point
 
 This wrapper script creates a native desktop application using PyWebView.
 It uses proper thread lifecycle management to prevent memory leaks in PyInstaller builds.
