@@ -300,8 +300,6 @@ def on_startup(window):
     Args:
         window: PyWebView window instance
     """
-    global _server_shutdown_event, _server_thread
-    
     host = '127.0.0.1'
     port = find_free_port()
     url = f"http://{host}:{port}/galleryout/"
@@ -372,8 +370,6 @@ def cleanup_and_exit():
     Registered with atexit to ensure cleanup happens even on abnormal termination.
     Signals server shutdown and waits for thread to finish.
     """
-    global _server_shutdown_event, _server_thread
-    
     logger.info("Application cleanup starting...")
     
     # Signal server shutdown
@@ -495,7 +491,8 @@ For more information, see the documentation."""
                 </html>
             """, width=700, height=600, resizable=False)
             webview.start()
-        except:
+        except Exception as e:
+            logging.error(f"Failed to create error window: {e}")
             pass  # If webview fails, just exit silently
         
         sys.exit(1)

@@ -142,7 +142,7 @@ import base64
 import threading
 import logging
 from datetime import datetime
-from flask import g, Flask, render_template, send_from_directory, abort, send_file, url_for, redirect, request, jsonify, Response, stream_with_context
+from flask import g, Flask, render_template, abort, send_file, url_for, redirect, request, jsonify, Response, stream_with_context
 # flask_cors removed - not needed for standalone version
 from PIL import Image, ImageSequence
 import colorsys
@@ -734,7 +734,7 @@ def debug_save_workflow_stage(file_path: Path, stage: str, data: Any, format_inf
                 try:
                     parsed = json.loads(data)
                     json.dump(parsed, f, indent=2, ensure_ascii=False)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     f.write(data)
             else:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -1532,7 +1532,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             try:
                 with Image.open(filepath) as img:
                     details['type'] = 'animated_image' if getattr(img, 'is_animated', False) else 'image'
-            except:
+            except (IOError, OSError):
                 pass
         
         # Get dimensions
@@ -1540,7 +1540,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             try:
                 with Image.open(filepath) as img:
                     details['dimensions'] = f"{img.width}x{img.height}"
-            except:
+            except (IOError, OSError):
                 pass
         
         # Check for workflow (simplified version)
@@ -1553,7 +1553,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                     if (img.info.get('workflow') or img.info.get('Workflow') or 
                         img.info.get('prompt') or img.info.get('Prompt')):
                         workflow_found = True
-        except:
+        except (IOError, OSError):
             pass
         
         if not workflow_found:
@@ -1563,7 +1563,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                 search_pattern = os.path.join(base_input_path_workflow, f"{base_filename}*.json")
                 if glob.glob(search_pattern):
                     workflow_found = True
-            except:
+            except (OSError, IOError):
                 pass
         
         details['has_workflow'] = 1 if workflow_found else 0
@@ -1580,7 +1580,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                         total_duration_sec = count / fps
                     details['dimensions'] = f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
                     cap.release()
-            except:
+            except (cv2.error, OSError, IOError):
                 pass
         elif details['type'] == 'animated_image':
             try:
@@ -1590,7 +1590,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                             total_duration_sec = sum(frame.info.get('duration', 100) for frame in ImageSequence.Iterator(img)) / 1000
                         elif ext_lower == '.webp':
                             total_duration_sec = getattr(img, 'n_frames', 1) / webp_animated_fps
-            except:
+            except (IOError, OSError):
                 pass
         
         if total_duration_sec > 0:
@@ -1599,7 +1599,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             details['duration'] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
         
         # Create thumbnail
-        file_hash_for_thumbnail = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+        file_hash_for_thumbnail = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
         
         if not glob.glob(os.path.join(thumbnail_cache_dir, f"{file_hash_for_thumbnail}.*")):
             # Inline thumbnail creation
@@ -1623,7 +1623,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                             if img.mode != 'RGB':
                                 img = img.convert('RGB')
                             img.save(cache_path, 'JPEG', quality=85)
-                except:
+                except (IOError, OSError):
                     pass
             elif file_type == 'video':
                 try:
@@ -1636,10 +1636,10 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                         img = Image.fromarray(frame_rgb)
                         img.thumbnail((thumbnail_width, thumbnail_width * 2), Image.Resampling.LANCZOS)
                         img.save(cache_path, 'JPEG', quality=80)
-                except:
+                except (cv2.error, IOError, OSError):
                     pass
         
-        file_id = hashlib.md5(filepath.encode()).hexdigest()
+        file_id = hashlib.md5(filepath.encode(), usedforsecurity=False).hexdigest()
         
         # Extract workflow metadata if workflow is present
         # Returns a LIST of sampler metadata dicts (one per sampler node found)
@@ -2283,11 +2283,11 @@ def sync_folder_internal(folder_path):
             
             for path in files_to_process:
                 metadata = analyze_file_metadata(path)
-                file_hash = hashlib.md5((path + str(disk_files[path])).encode()).hexdigest()
+                file_hash = hashlib.md5((path + str(disk_files[path])).encode(), usedforsecurity=False).hexdigest()
                 if not glob.glob(os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")): 
                     create_thumbnail(path, file_hash, metadata['type'])
                 
-                file_id = hashlib.md5(path.encode()).hexdigest()
+                file_id = hashlib.md5(path.encode(), usedforsecurity=False).hexdigest()
 
                 # --- NEW: Extract preview data here as well ---
                 prompt_preview = None
