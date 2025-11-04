@@ -1,5 +1,45 @@
 
 # Changelog
+
+## [2.1.0] - 2025-11-05
+
+### Critical Fixes
+
+- **CRITICAL FIX**: Infinite process spawning in PyInstaller builds resolved
+  - Added `multiprocessing.freeze_support()` to both `main.py` and `smartgallery.py`
+  - Prevents module-level code re-execution in worker processes
+  - Fixes cascading memory leaks and pagefile exhaustion
+
+- **Memory leak fixes** for long-running applications:
+  - Implemented `BoundedCache` class with TTL and LRU eviction (replaces unbounded dicts)
+  - `_filter_options_cache`: Limited to 50 entries, 5-minute TTL
+  - `request_timing_log`: Limited to 500 entries, 10-minute TTL
+  
+- **Thread lifecycle management** improvements:
+  - Changed server thread from daemon to non-daemon for proper cleanup
+  - Added `cleanup_and_exit()` function with `atexit` registration
+  - Implemented shutdown event coordination between threads
+  - Added Windows signal handlers (SIGINT, SIGTERM)
+
+- **Production WSGI server** integration:
+  - Switched from Flask development server to `waitress` for PyInstaller stability
+  - Added fallback to Flask dev server if waitress not available
+  - Better thread management and connection handling
+
+### Added
+
+- `safe_image_operation()` context manager for PIL operations (prevents file handle leaks)
+- Enhanced logging for startup, shutdown, and error conditions
+- Comprehensive build and memory leak fix documentation
+
+### Changed
+
+- Updated `requirements.txt` to include `waitress>=3.0.2`
+- Enhanced `smartgallery.spec` with memory optimizations and excluded packages
+- Improved `main.py` with proper PyWebView startup pattern using `on_startup` callback
+
+---
+
 ## [1.50.0] - 2025-10-30
 
 ### Added

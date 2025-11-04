@@ -2,7 +2,13 @@
 # Formerly: Smart Gallery for ComfyUI (now decoupled from ComfyUI)
 # Author: Biagio Maffettone © 2025 — MIT License (free to use and modify)
 #
-# Version: 2.0.0 - Standalone Version (November 2025)
+# Version: 2.1.0 - Standalone Version (November 2025)
+#
+# MAJOR CHANGES (v2.1.0 - Critical Stability Release):
+# - CRITICAL: Fixed infinite process spawning in PyInstaller builds (multiprocessing.freeze_support)
+# - CRITICAL: Implemented BoundedCache to prevent unbounded memory growth
+# - Added production WSGI server (waitress) for PyInstaller stability
+# - Enhanced thread lifecycle management with proper cleanup handlers
 #
 # MAJOR CHANGES (v2.0.0 - Standalone Release):
 # - Decoupled from ComfyUI: Now runs as a standalone application
