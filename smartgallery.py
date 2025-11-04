@@ -2842,7 +2842,7 @@ def rename_folder(folder_key):
         update_data = []
         for row in files_to_update:
             new_file_path = row['path'].replace(old_path, new_path, 1)
-            new_id = hashlib.md5(new_file_path.encode()).hexdigest()
+            new_id = hashlib.md5(new_file_path.encode(), usedforsecurity=False).hexdigest()
             update_data.append((new_id, new_file_path, row['id']))
             
         if update_data: 
@@ -3375,7 +3375,7 @@ def move_batch():
             shutil.move(source_path, final_dest_path)
                 
             # Only update DB after successful file move
-            new_id = hashlib.md5(final_dest_path.encode()).hexdigest()
+            new_id = hashlib.md5(final_dest_path.encode(), usedforsecurity=False).hexdigest()
             conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, final_dest_path, final_filename, file_id))
             conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             moved_count += 1
@@ -3415,7 +3415,7 @@ def delete_batch():
                 os.remove(row['path'])
                 
             # Clean up orphaned thumbnail
-            file_hash = hashlib.md5((row['path'] + str(row['mtime'])).encode()).hexdigest()
+            file_hash = hashlib.md5((row['path'] + str(row['mtime'])).encode(), usedforsecurity=False).hexdigest()
             thumbnail_pattern = os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")
             for thumbnail_path in glob.glob(thumbnail_pattern):
                 try:
@@ -3500,7 +3500,7 @@ def rename_file(file_id):
 
         # Perform the rename and database update
         os.rename(old_path, new_path)
-        new_id = hashlib.md5(new_path.encode()).hexdigest()
+        new_id = hashlib.md5(new_path.encode(), usedforsecurity=False).hexdigest()
         conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, new_path, final_new_name, file_id))
         conn.commit()
 
@@ -3540,7 +3540,7 @@ def delete_file(file_id):
         return jsonify({'status': 'error', 'message': f'Could not delete file from disk: {e}'}), 500
 
     # Clean up orphaned thumbnail
-    file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+    file_hash = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
     try:
         thumbnail_pattern = os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")
         for thumbnail_path in glob.glob(thumbnail_pattern):
@@ -3602,7 +3602,7 @@ def get_node_summary(file_id):
 def serve_thumbnail(file_id):
     info = get_file_info_from_db(file_id)
     filepath, mtime = info['path'], info['mtime']
-    file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+    file_hash = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
     existing_thumbnails = glob.glob(os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*"))
     if existing_thumbnails: return send_file(existing_thumbnails[0])
     print(f"WARN: Thumbnail not found for {os.path.basename(filepath)}, generating...")
