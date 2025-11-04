@@ -46,3 +46,7 @@ Thumbs.db
 
 smart-comfyui-gallery.xml
 bin/
+bin\ffprobe.exe
+MEMORY_LEAK_FIXES.md
+.gitignore
+smartgallery copy.spec

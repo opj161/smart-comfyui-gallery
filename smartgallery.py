@@ -154,6 +154,48 @@ import argparse
 from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
+from contextlib import contextmanager
+
+
+# ================================================================================
+# IMAGE HANDLE MANAGEMENT - Context Manager for Safe PIL Operations
+# ================================================================================
+@contextmanager
+def safe_image_operation(image_path):
+    """
+    Context manager to ensure PIL Image handles are always properly closed.
+    
+    This prevents file handle leaks which can cause memory exhaustion in
+    long-running applications, especially in frozen PyInstaller builds.
+    
+    Usage:
+        with safe_image_operation(file_path) as img:
+            # Process image
+            img.thumbnail((200, 200))
+            # Image is automatically closed on exit
+    
+    Args:
+        image_path: Path to image file
+        
+    Yields:
+        PIL.Image: Opened image object
+        
+    Raises:
+        Exception: Re-raises any PIL operation errors after cleanup
+    """
+    img = None
+    try:
+        img = Image.open(image_path)
+        yield img
+    except Exception as e:
+        logging.error(f"Image operation failed for {image_path}: {e}")
+        raise
+    finally:
+        if img:
+            try:
+                img.close()
+            except Exception as close_error:
+                logging.warning(f"Error closing image {image_path}: {close_error}")
 
 
 # ================================================================================
@@ -843,10 +885,11 @@ def extract_workflow_metadata(workflow_str: str, file_path: Path, debug_dir: str
 BATCH_SIZE = 500
 
 # Number of parallel processes to use for thumbnail and metadata generation.
-# - Set to None to use all available CPU cores (fastest, but uses more CPU).
+# - Set to None to use all available CPU cores (can cause high memory usage when frozen).
 # - Set to 1 to disable parallel processing (slowest, like in previous versions).
-# - Set to a specific number of cores (e.g., 4) to limit CPU usage on a multi-core machine.
-MAX_PARALLEL_WORKERS = None
+# - Set to a specific number of cores (e.g., 4) to limit CPU/memory usage on a multi-core machine.
+# IMPORTANT: When building with PyInstaller, limit this to avoid memory exhaustion!
+MAX_PARALLEL_WORKERS = 4  # Limited to 4 workers to prevent memory exhaustion in frozen builds
 
 # Number of files to display per page in the gallery view
 FILES_PER_PAGE = 100
@@ -872,7 +915,8 @@ DB_SCHEMA_VERSION = 22  # Schema version is static and can remain global
 
 # --- DEBUG CONFIGURATION ---
 # Set to True to enable workflow debugging (saves extracted workflows to disk)
-DEBUG_WORKFLOW_EXTRACTION = True  # Change to True to enable debugging
+# WARNING: Should be False for production builds to reduce I/O overhead!
+DEBUG_WORKFLOW_EXTRACTION = False  # Disabled for production to improve performance and stability
 
 # --- FLASK APP INITIALIZATION ---
 app = Flask(__name__)
@@ -916,13 +960,112 @@ app.config['ALL_MEDIA_EXTENSIONS'] = (
 folder_config_cache = None
 folder_config_cache_lock = threading.Lock()
 
+# --- BoundedCache: Thread-safe cache with automatic eviction ---
+class BoundedCache:
+    """
+    Thread-safe cache with automatic eviction based on size and TTL.
+    
+    Features:
+    - Maximum size limit (LRU eviction when full)
+    - Time-to-live (TTL) for automatic expiration
+    - Thread-safe with RLock
+    - Hit/miss statistics tracking
+    
+    This prevents unbounded memory growth in long-running applications.
+    """
+    
+    def __init__(self, max_size=100, ttl_seconds=300):
+        """
+        Initialize cache with size and time limits.
+        
+        Args:
+            max_size: Maximum number of entries (default 100)
+            ttl_seconds: Time-to-live in seconds (default 300 = 5 minutes)
+        """
+        self.cache = {}
+        self.timestamps = {}
+        self.max_size = max_size
+        self.ttl = ttl_seconds
+        self.lock = threading.RLock()
+        self.hits = 0
+        self.misses = 0
+    
+    def get(self, key):
+        """
+        Retrieve value from cache if present and not expired.
+        
+        Returns:
+            Cached value if found and valid, None otherwise
+        """
+        with self.lock:
+            if key in self.cache:
+                # Check expiration
+                if time.time() - self.timestamps[key] < self.ttl:
+                    self.hits += 1
+                    return self.cache[key]
+                else:
+                    # Expired - remove it
+                    del self.cache[key]
+                    del self.timestamps[key]
+                    self.misses += 1
+                    return None
+            else:
+                self.misses += 1
+                return None
+    
+    def set(self, key, value):
+        """
+        Store value in cache with automatic eviction if at capacity.
+        
+        Uses LRU (Least Recently Used) eviction strategy.
+        """
+        with self.lock:
+            # Evict oldest entry if at capacity
+            if len(self.cache) >= self.max_size and key not in self.cache:
+                oldest_key = min(
+                    self.timestamps, 
+                    key=self.timestamps.get
+                )
+                del self.cache[oldest_key]
+                del self.timestamps[oldest_key]
+            
+            self.cache[key] = value
+            self.timestamps[key] = time.time()
+    
+    def clear(self):
+        """Clear all cache entries."""
+        with self.lock:
+            self.cache.clear()
+            self.timestamps.clear()
+            self.hits = 0
+            self.misses = 0
+    
+    def get_stats(self):
+        """
+        Get cache statistics.
+        
+        Returns:
+            dict with size, hits, misses, and hit_rate
+        """
+        with self.lock:
+            total = self.hits + self.misses
+            hit_rate = (self.hits / total * 100) if total > 0 else 0
+            return {
+                'size': len(self.cache),
+                'max_size': self.max_size,
+                'hits': self.hits,
+                'misses': self.misses,
+                'hit_rate': f"{hit_rate:.1f}%"
+            }
+
 # --- Enhanced In-Memory Cache for Filter Options ---
-_filter_options_cache = {}
-_cache_lock = threading.Lock()
+# Using BoundedCache to prevent unbounded memory growth
+_filter_options_cache = BoundedCache(max_size=50, ttl_seconds=300)  # 5 minutes TTL
+_cache_lock = threading.Lock()  # Kept for backward compatibility
 CACHE_DURATION_SECONDS = 300  # 5 minutes
 
 class CacheEntry:
-    """Simple cache entry with timestamp and data."""
+    """Simple cache entry with timestamp and data (legacy compatibility)."""
     def __init__(self, data):
         self.data = data
         self.timestamp = time.time()
@@ -939,46 +1082,35 @@ class CacheEntry:
 
 def get_cache_stats():
     """Return cache statistics for monitoring."""
-    with _cache_lock:
-        # Calculate hits from CacheEntry objects
-        total_hits = 0
-        for entry in _filter_options_cache.values():
-            if isinstance(entry, dict) and 'data' in entry:
-                # Old dict-based cache format doesn't track hits (backward compatibility)
-                pass
-            elif hasattr(entry, 'hits'):
-                # New CacheEntry format with hit tracking
-                total_hits += entry.hits
-        
-        stats = {
-            'filter_options': {
-                'entries': len(_filter_options_cache),
-                'hits': total_hits
-            },
-            'folder_config': {
-                'cached': folder_config_cache is not None
-            }
+    # Use BoundedCache built-in stats
+    filter_stats = _filter_options_cache.get_stats()
+    timing_stats = request_timing_log.get_stats()
+    
+    stats = {
+        'filter_options': filter_stats,
+        'request_timing': timing_stats,
+        'folder_config': {
+            'cached': folder_config_cache is not None
         }
+    }
     return stats
 
 # Request counter for stats
 request_counter = {'count': 0, 'lock': threading.Lock()}
 
 # --- PERFORMANCE MONITORING ---
-# Track request timing for performance analysis
-request_timing_log = {'requests': [], 'lock': threading.Lock()}
+# Track request timing for performance analysis (with bounded size)
+request_timing_log = BoundedCache(max_size=500, ttl_seconds=600)  # 10 minutes TTL
 
 def log_request_timing(endpoint, duration_ms):
     """Log request timing for performance monitoring."""
-    with request_timing_log['lock']:
-        request_timing_log['requests'].append({
-            'endpoint': endpoint,
-            'duration_ms': duration_ms,
-            'timestamp': time.time()
-        })
-        # Keep only last 1000 requests to prevent memory bloat
-        if len(request_timing_log['requests']) > 1000:
-            request_timing_log['requests'] = request_timing_log['requests'][-1000:]
+    # Store timing data in BoundedCache (automatically handles size limits)
+    key = f"{endpoint}_{time.time()}"
+    request_timing_log.set(key, {
+        'endpoint': endpoint,
+        'duration_ms': duration_ms,
+        'timestamp': time.time()
+    })
 
 # --- INITIALIZATION GUARD DECORATOR (Issue #5) ---
 from functools import wraps
@@ -2757,11 +2889,11 @@ def filter_options():
     """
     global _filter_options_cache
     
-    with _cache_lock:
-        cache_entry = _filter_options_cache.get('options')
-        if cache_entry and (time.time() - cache_entry['timestamp']) < CACHE_DURATION_SECONDS:
-            logging.info(" Serving filter options from cache.")
-            return jsonify(cache_entry['data'])
+    # Check cache first (BoundedCache handles TTL automatically)
+    cached_data = _filter_options_cache.get('options')
+    if cached_data:
+        logging.info(" Serving filter options from cache.")
+        return jsonify(cached_data)
 
     # --- If cache is invalid, proceed with database query ---
     logging.info(" Cache miss or expired. Querying DB for filter options.")
@@ -2817,12 +2949,8 @@ def filter_options():
             }
         }
         
-        # Update cache
-        with _cache_lock:
-            _filter_options_cache['options'] = {
-                'timestamp': time.time(),
-                'data': response_data
-            }
+        # Update cache using BoundedCache (automatically handles TTL and size limits)
+        _filter_options_cache.set('options', response_data)
         
         print(f"INFO: filter_options returning {len(samplers)} samplers, {len(schedulers)} schedulers.")
         return jsonify(response_data)
@@ -3534,13 +3662,38 @@ def handle_generic_exception(e):
 
 
 def run_app(host='0.0.0.0', port=8008, debug=False):
-    """Starts the Flask server. Designed to be called by the wrapper."""
+    """
+    Starts the Flask server with production-grade WSGI server.
+    
+    Uses waitress for PyInstaller builds (production stability).
+    Falls back to Flask development server if waitress is not available.
+    
+    Args:
+        host: Host to bind to (default: 0.0.0.0)
+        port: Port to listen on (default: 8008)
+        debug: Enable debug mode (default: False, should be False in production)
+    """
     try:
-        app.run(host=host, port=port, debug=debug)
+        # Try to use waitress for production stability (critical for PyInstaller)
+        try:
+            from waitress import serve
+            logging.info(f"Starting SmartGallery with waitress on {host}:{port}")
+            serve(app, host=host, port=port, threads=4, connection_limit=1000)
+        except ImportError:
+            # Fallback to Flask development server
+            logging.warning("waitress not installed, using Flask development server (not recommended for production)")
+            logging.warning("Install waitress for better stability: pip install waitress")
+            app.run(host=host, port=port, debug=debug, threaded=True)
     except Exception as e:
         logging.error(f"Failed to run Flask app: {e}")
+        raise
 
 def main():
+    # CRITICAL: Prevent infinite process spawning in PyInstaller builds
+    # This MUST be the first line - prevents module-level code from re-executing in worker processes
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     parser = argparse.ArgumentParser(description="SmartGallery - Standalone AI Media Gallery")
     parser.add_argument("--config", type=str, default="config.json", help="Path to configuration file (default: config.json)")
     parser.add_argument("--output-path", type=str, help="Path to your AI output directory (overrides config.json)")

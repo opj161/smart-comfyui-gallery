@@ -17,6 +17,9 @@ tqdm>=4.66.0
 pywebview>=6.1
 appdirs>=1.4.4
 
+# Production WSGI Server (for PyInstaller stability)
+waitress>=3.0.2
+
 # Packaging (for building standalone executable)
 pyinstaller>=6.16.0
 
