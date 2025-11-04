@@ -13,4 +13,11 @@ opencv-python>=4.8.0
 # Progress Bars
 tqdm>=4.66.0
 
+# Desktop GUI (for standalone executable)
+pywebview>=6.1
+appdirs>=1.4.4
+
+# Packaging (for building standalone executable)
+pyinstaller>=6.16.0
+
 # Note: flask-cors removed in v2.0.0 (not needed for standalone version)

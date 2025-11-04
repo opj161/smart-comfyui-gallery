@@ -149,6 +149,8 @@ import colorsys
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 import concurrent.futures
+import appdirs
+import argparse
 from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -1104,13 +1106,24 @@ def generate_node_summary(workflow_json_string):
 # --- ALL UTILITY AND HELPER FUNCTIONS ARE DEFINED HERE, BEFORE ANY ROUTES ---
 
 def find_ffprobe_path():
+    # 1. Check for bundled ffprobe first when running as a frozen executable
+    if getattr(sys, 'frozen', False):
+        bundled_path = os.path.join(sys._MEIPASS, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
+        if os.path.exists(bundled_path):
+            try:
+                subprocess.run([bundled_path, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+                return bundled_path
+            except Exception as e:
+                logging.warning(f"Bundled ffprobe at '{bundled_path}' failed to run: {e}")
+
+    # 2. Fallback to configured path or system PATH
     manual_path = app.config.get("FFPROBE_MANUAL_PATH", "")
     if manual_path and os.path.isfile(manual_path):
         try:
             subprocess.run([manual_path, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             return manual_path
         except Exception as e:
-            logging.warning(f" Manual ffprobe path '{manual_path}' is invalid: {e}")
+            logging.warning(f"Manual ffprobe path '{manual_path}' is invalid: {e}")
     base_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
     try:
         result = subprocess.run([base_name, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
@@ -2371,11 +2384,28 @@ def scan_folder_and_extract_options(folder_path):
 
 def initialize_gallery(flask_app):
     """Initializes the gallery by setting up derived paths and the database."""
+
+    # Determine the base path for user-writable data (config, db, thumbnails)
+    # This ensures we don't write into the read-only bundled app folder
+    USER_DATA_PATH = appdirs.user_data_dir("SmartGallery", appauthor=False)
+    os.makedirs(USER_DATA_PATH, exist_ok=True)
+    print(f"INFO: User data will be stored in: {USER_DATA_PATH}")
+
+    # Determine base path for bundled assets (templates, static files)
+    if getattr(sys, 'frozen', False):
+        # Running in a PyInstaller bundle
+        base_path = sys._MEIPASS
+        flask_app.template_folder = os.path.join(base_path, 'templates')
+        flask_app.static_folder = os.path.join(base_path, 'static')
+    else:
+        # Running as a normal script (development)
+        base_path = os.path.dirname(os.path.abspath(__file__))
     
     # Now that BASE_OUTPUT_PATH etc. are in app.config, we can derive the rest.
     flask_app.config['BASE_INPUT_PATH_WORKFLOW'] = os.path.join(flask_app.config['BASE_INPUT_PATH'], flask_app.config['WORKFLOW_FOLDER_NAME'])
-    flask_app.config['THUMBNAIL_CACHE_DIR'] = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], flask_app.config['THUMBNAIL_CACHE_FOLDER_NAME'])
-    flask_app.config['SQLITE_CACHE_DIR'] = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], flask_app.config['SQLITE_CACHE_FOLDER_NAME'])
+    # User data directories are now derived from USER_DATA_PATH
+    flask_app.config['THUMBNAIL_CACHE_DIR'] = os.path.join(USER_DATA_PATH, flask_app.config['THUMBNAIL_CACHE_FOLDER_NAME'])
+    flask_app.config['SQLITE_CACHE_DIR'] = os.path.join(USER_DATA_PATH, flask_app.config['SQLITE_CACHE_FOLDER_NAME'])
     flask_app.config['DATABASE_FILE'] = os.path.join(flask_app.config['SQLITE_CACHE_DIR'], flask_app.config['DATABASE_FILENAME'])
     
     protected_keys = {path_to_key(f) for f in flask_app.config['SPECIAL_FOLDERS']}
@@ -2386,10 +2416,10 @@ def initialize_gallery(flask_app):
     if DEBUG_WORKFLOW_EXTRACTION:
         debug_path = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], 'workflow_debug')
         print(f"INFO: Workflow debugging ENABLED - will save to {debug_path}")
-        logging.info(" Each file will have a subfolder with workflow data at each processing stage")
+        logging.info("Each file will have a subfolder with workflow data at each processing stage")
     
     # Setup logging
-    log_dir = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], 'smartgallery_logs')
+    log_dir = os.path.join(USER_DATA_PATH, 'smartgallery_logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f'gallery_{datetime.now().strftime("%Y%m%d")}.log')
     
@@ -2404,7 +2434,7 @@ def initialize_gallery(flask_app):
     flask_app.logger.setLevel(logging.INFO)
     flask_app.config['LOG_FILE'] = log_file
 
-    logging.info(" Initializing gallery...")
+    logging.info("Initializing gallery...")
     logging.info("SmartGallery initialization started")
     flask_app.config['FFPROBE_EXECUTABLE_PATH'] = find_ffprobe_path()
     os.makedirs(flask_app.config['THUMBNAIL_CACHE_DIR'], exist_ok=True)
@@ -3503,10 +3533,14 @@ def handle_generic_exception(e):
     return jsonify(response), 500
 
 
-if __name__ == '__main__':
-    import argparse
-    import json
+def run_app(host='0.0.0.0', port=8008, debug=False):
+    """Starts the Flask server. Designed to be called by the wrapper."""
+    try:
+        app.run(host=host, port=port, debug=debug)
+    except Exception as e:
+        logging.error(f"Failed to run Flask app: {e}")
 
+def main():
     parser = argparse.ArgumentParser(description="SmartGallery - Standalone AI Media Gallery")
     parser.add_argument("--config", type=str, default="config.json", help="Path to configuration file (default: config.json)")
     parser.add_argument("--output-path", type=str, help="Path to your AI output directory (overrides config.json)")
@@ -3518,18 +3552,25 @@ if __name__ == '__main__':
 
     # Load configuration from config.json if it exists
     config_data = {}
-    if os.path.exists(args.config):
+    
+    # Look for config.json in user data directory first, then current directory
+    USER_DATA_PATH = appdirs.user_data_dir("SmartGallery", appauthor=False)
+    config_path_user = os.path.join(USER_DATA_PATH, "config.json")
+    config_path_local = args.config
+
+    config_to_load = None
+    if os.path.exists(config_path_user):
+        config_to_load = config_path_user
+    elif os.path.exists(config_path_local):
+        config_to_load = config_path_local
+
+    if config_to_load:
         try:
-            with open(args.config, 'r', encoding='utf-8') as f:
+            with open(config_to_load, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-            print(f"✓ Loaded configuration from: {args.config}")
+            print(f"✓ Loaded configuration from: {config_to_load}")
         except Exception as e:
-            logging.warning(f" Failed to load config file '{args.config}': {e}")
-            print("Continuing with command-line arguments only...")
-    else:
-        if args.config != "config.json":  # Only warn if non-default config was specified
-            logging.warning(f" Config file '{args.config}' not found")
-        print("Using command-line arguments only...")
+            logging.warning(f"Failed to load config file '{config_to_load}': {e}")
 
     # Merge config: CLI args override config.json
     output_path = args.output_path or config_data.get('base_output_path')
@@ -3540,16 +3581,16 @@ if __name__ == '__main__':
     # Validate required paths
     if not output_path or not input_path:
         print("\nERROR: Required paths not provided!")
-        print("\nYou must provide paths either via:")
-        print("  1. Command line: --output-path and --input-path")
-        print("  2. Config file: Create config.json with base_output_path and base_input_path")
-        print("\nExample config.json:")
+        print(f"Create a config.json file in '{USER_DATA_PATH}' or in the current directory.")
+        print("Example config.json:")
         print('{')
-        print('    "base_output_path": "/path/to/your/output",')
-        print('    "base_input_path": "/path/to/your/input",')
+        print('    "base_output_path": "C:/Path/To/Your/AI/Output",')
+        print('    "base_input_path": "C:/Path/To/Your/AI/Input",')
         print('    "server_port": 8008')
         print('}')
-        print("\nSee config.json.example for more options.")
+        print("\nAlternatively, use command-line arguments:")
+        print("  --output-path /path/to/output")
+        print("  --input-path /path/to/input")
         sys.exit(1)
 
     if not os.path.isdir(output_path):
@@ -3595,4 +3636,7 @@ if __name__ == '__main__':
     print(f"✓ Open in browser: http://127.0.0.1:{server_port}/galleryout/")
     print("="*60 + "\n")
     
-    app.run(host='0.0.0.0', port=server_port, debug=False)
+    run_app(host='0.0.0.0', port=server_port, debug=False)
+
+if __name__ == '__main__':
+    main()
