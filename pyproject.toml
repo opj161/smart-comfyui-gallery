@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77.0.0", "wheel"]
+requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartgallery-standalone"
-version = "2.0.0"
+version = "2.1.0"
 description = "Standalone AI media gallery with workflow metadata extraction. Browse, organize, and analyze AI-generated images and videos. Works with any ComfyUI-generated files."
 license = "MIT"
 license-files = ["LICENSE"]

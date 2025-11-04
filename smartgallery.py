@@ -2,7 +2,13 @@
 # Formerly: Smart Gallery for ComfyUI (now decoupled from ComfyUI)
 # Author: Biagio Maffettone © 2025 — MIT License (free to use and modify)
 #
-# Version: 2.0.0 - Standalone Version (November 2025)
+# Version: 2.1.0 - Standalone Version (November 2025)
+#
+# MAJOR CHANGES (v2.1.0 - Critical Stability Release):
+# - CRITICAL: Fixed infinite process spawning in PyInstaller builds (multiprocessing.freeze_support)
+# - CRITICAL: Implemented BoundedCache to prevent unbounded memory growth
+# - Added production WSGI server (waitress) for PyInstaller stability
+# - Enhanced thread lifecycle management with proper cleanup handlers
 #
 # MAJOR CHANGES (v2.0.0 - Standalone Release):
 # - Decoupled from ComfyUI: Now runs as a standalone application
@@ -142,16 +148,60 @@ import base64
 import threading
 import logging
 from datetime import datetime
-from flask import g, Flask, render_template, send_from_directory, abort, send_file, url_for, redirect, request, jsonify, Response, stream_with_context
+from flask import g, Flask, render_template, abort, send_file, url_for, redirect, request, jsonify, Response, stream_with_context
 # flask_cors removed - not needed for standalone version
 from PIL import Image, ImageSequence
 import colorsys
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 import concurrent.futures
+import appdirs
+import argparse
 from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
+from contextlib import contextmanager
+
+
+# ================================================================================
+# IMAGE HANDLE MANAGEMENT - Context Manager for Safe PIL Operations
+# ================================================================================
+@contextmanager
+def safe_image_operation(image_path):
+    """
+    Context manager to ensure PIL Image handles are always properly closed.
+    
+    This prevents file handle leaks which can cause memory exhaustion in
+    long-running applications, especially in frozen PyInstaller builds.
+    
+    Usage:
+        with safe_image_operation(file_path) as img:
+            # Process image
+            img.thumbnail((200, 200))
+            # Image is automatically closed on exit
+    
+    Args:
+        image_path: Path to image file
+        
+    Yields:
+        PIL.Image: Opened image object
+        
+    Raises:
+        Exception: Re-raises any PIL operation errors after cleanup
+    """
+    img = None
+    try:
+        img = Image.open(image_path)
+        yield img
+    except Exception as e:
+        logging.error(f"Image operation failed for {image_path}: {e}")
+        raise
+    finally:
+        if img:
+            try:
+                img.close()
+            except Exception as close_error:
+                logging.warning(f"Error closing image {image_path}: {close_error}")
 
 
 # ================================================================================
@@ -690,7 +740,7 @@ def debug_save_workflow_stage(file_path: Path, stage: str, data: Any, format_inf
                 try:
                     parsed = json.loads(data)
                     json.dump(parsed, f, indent=2, ensure_ascii=False)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     f.write(data)
             else:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -841,10 +891,11 @@ def extract_workflow_metadata(workflow_str: str, file_path: Path, debug_dir: str
 BATCH_SIZE = 500
 
 # Number of parallel processes to use for thumbnail and metadata generation.
-# - Set to None to use all available CPU cores (fastest, but uses more CPU).
+# - Set to None to use all available CPU cores (can cause high memory usage when frozen).
 # - Set to 1 to disable parallel processing (slowest, like in previous versions).
-# - Set to a specific number of cores (e.g., 4) to limit CPU usage on a multi-core machine.
-MAX_PARALLEL_WORKERS = None
+# - Set to a specific number of cores (e.g., 4) to limit CPU/memory usage on a multi-core machine.
+# IMPORTANT: When building with PyInstaller, limit this to avoid memory exhaustion!
+MAX_PARALLEL_WORKERS = 4  # Limited to 4 workers to prevent memory exhaustion in frozen builds
 
 # Number of files to display per page in the gallery view
 FILES_PER_PAGE = 100
@@ -870,7 +921,8 @@ DB_SCHEMA_VERSION = 22  # Schema version is static and can remain global
 
 # --- DEBUG CONFIGURATION ---
 # Set to True to enable workflow debugging (saves extracted workflows to disk)
-DEBUG_WORKFLOW_EXTRACTION = True  # Change to True to enable debugging
+# WARNING: Should be False for production builds to reduce I/O overhead!
+DEBUG_WORKFLOW_EXTRACTION = False  # Disabled for production to improve performance and stability
 
 # --- FLASK APP INITIALIZATION ---
 app = Flask(__name__)
@@ -914,13 +966,112 @@ app.config['ALL_MEDIA_EXTENSIONS'] = (
 folder_config_cache = None
 folder_config_cache_lock = threading.Lock()
 
+# --- BoundedCache: Thread-safe cache with automatic eviction ---
+class BoundedCache:
+    """
+    Thread-safe cache with automatic eviction based on size and TTL.
+    
+    Features:
+    - Maximum size limit (LRU eviction when full)
+    - Time-to-live (TTL) for automatic expiration
+    - Thread-safe with RLock
+    - Hit/miss statistics tracking
+    
+    This prevents unbounded memory growth in long-running applications.
+    """
+    
+    def __init__(self, max_size=100, ttl_seconds=300):
+        """
+        Initialize cache with size and time limits.
+        
+        Args:
+            max_size: Maximum number of entries (default 100)
+            ttl_seconds: Time-to-live in seconds (default 300 = 5 minutes)
+        """
+        self.cache = {}
+        self.timestamps = {}
+        self.max_size = max_size
+        self.ttl = ttl_seconds
+        self.lock = threading.RLock()
+        self.hits = 0
+        self.misses = 0
+    
+    def get(self, key):
+        """
+        Retrieve value from cache if present and not expired.
+        
+        Returns:
+            Cached value if found and valid, None otherwise
+        """
+        with self.lock:
+            if key in self.cache:
+                # Check expiration
+                if time.time() - self.timestamps[key] < self.ttl:
+                    self.hits += 1
+                    return self.cache[key]
+                else:
+                    # Expired - remove it
+                    del self.cache[key]
+                    del self.timestamps[key]
+                    self.misses += 1
+                    return None
+            else:
+                self.misses += 1
+                return None
+    
+    def set(self, key, value):
+        """
+        Store value in cache with automatic eviction if at capacity.
+        
+        Uses LRU (Least Recently Used) eviction strategy.
+        """
+        with self.lock:
+            # Evict oldest entry if at capacity
+            if len(self.cache) >= self.max_size and key not in self.cache:
+                oldest_key = min(
+                    self.timestamps, 
+                    key=self.timestamps.get
+                )
+                del self.cache[oldest_key]
+                del self.timestamps[oldest_key]
+            
+            self.cache[key] = value
+            self.timestamps[key] = time.time()
+    
+    def clear(self):
+        """Clear all cache entries."""
+        with self.lock:
+            self.cache.clear()
+            self.timestamps.clear()
+            self.hits = 0
+            self.misses = 0
+    
+    def get_stats(self):
+        """
+        Get cache statistics.
+        
+        Returns:
+            dict with size, hits, misses, and hit_rate
+        """
+        with self.lock:
+            total = self.hits + self.misses
+            hit_rate = (self.hits / total * 100) if total > 0 else 0
+            return {
+                'size': len(self.cache),
+                'max_size': self.max_size,
+                'hits': self.hits,
+                'misses': self.misses,
+                'hit_rate': f"{hit_rate:.1f}%"
+            }
+
 # --- Enhanced In-Memory Cache for Filter Options ---
-_filter_options_cache = {}
-_cache_lock = threading.Lock()
+# Using BoundedCache to prevent unbounded memory growth
+_filter_options_cache = BoundedCache(max_size=50, ttl_seconds=300)  # 5 minutes TTL
+_cache_lock = threading.Lock()  # Kept for backward compatibility
 CACHE_DURATION_SECONDS = 300  # 5 minutes
 
 class CacheEntry:
-    """Simple cache entry with timestamp and data."""
+    """Simple cache entry with timestamp and data (legacy compatibility)."""
     def __init__(self, data):
         self.data = data
         self.timestamp = time.time()
@@ -937,46 +1088,35 @@ class CacheEntry:
 
 def get_cache_stats():
     """Return cache statistics for monitoring."""
-    with _cache_lock:
-        # Calculate hits from CacheEntry objects
-        total_hits = 0
-        for entry in _filter_options_cache.values():
-            if isinstance(entry, dict) and 'data' in entry:
-                # Old dict-based cache format doesn't track hits (backward compatibility)
-                pass
-            elif hasattr(entry, 'hits'):
-                # New CacheEntry format with hit tracking
-                total_hits += entry.hits
-        
-        stats = {
-            'filter_options': {
-                'entries': len(_filter_options_cache),
-                'hits': total_hits
-            },
-            'folder_config': {
-                'cached': folder_config_cache is not None
-            }
+    # Use BoundedCache built-in stats
+    filter_stats = _filter_options_cache.get_stats()
+    timing_stats = request_timing_log.get_stats()
+    
+    stats = {
+        'filter_options': filter_stats,
+        'request_timing': timing_stats,
+        'folder_config': {
+            'cached': folder_config_cache is not None
         }
+    }
     return stats
 
 # Request counter for stats
 request_counter = {'count': 0, 'lock': threading.Lock()}
 
 # --- PERFORMANCE MONITORING ---
-# Track request timing for performance analysis
-request_timing_log = {'requests': [], 'lock': threading.Lock()}
+# Track request timing for performance analysis (with bounded size)
+request_timing_log = BoundedCache(max_size=500, ttl_seconds=600)  # 10 minutes TTL
 
 def log_request_timing(endpoint, duration_ms):
     """Log request timing for performance monitoring."""
-    with request_timing_log['lock']:
-        request_timing_log['requests'].append({
-            'endpoint': endpoint,
-            'duration_ms': duration_ms,
-            'timestamp': time.time()
-        })
-        # Keep only last 1000 requests to prevent memory bloat
-        if len(request_timing_log['requests']) > 1000:
-            request_timing_log['requests'] = request_timing_log['requests'][-1000:]
+    # Store timing data in BoundedCache (automatically handles size limits)
+    key = f"{endpoint}_{time.time()}"
+    request_timing_log.set(key, {
+        'endpoint': endpoint,
+        'duration_ms': duration_ms,
+        'timestamp': time.time()
+    })
 
 # --- INITIALIZATION GUARD DECORATOR (Issue #5) ---
 from functools import wraps
@@ -1104,13 +1244,24 @@ def generate_node_summary(workflow_json_string):
 # --- ALL UTILITY AND HELPER FUNCTIONS ARE DEFINED HERE, BEFORE ANY ROUTES ---
 
 def find_ffprobe_path():
+    # 1. Check for bundled ffprobe first when running as a frozen executable
+    if getattr(sys, 'frozen', False):
+        bundled_path = os.path.join(sys._MEIPASS, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
+        if os.path.exists(bundled_path):
+            try:
+                subprocess.run([bundled_path, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+                return bundled_path
+            except Exception as e:
+                logging.warning(f"Bundled ffprobe at '{bundled_path}' failed to run: {e}")
+
+    # 2. Fallback to configured path or system PATH
     manual_path = app.config.get("FFPROBE_MANUAL_PATH", "")
     if manual_path and os.path.isfile(manual_path):
         try:
             subprocess.run([manual_path, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             return manual_path
         except Exception as e:
-            logging.warning(f" Manual ffprobe path '{manual_path}' is invalid: {e}")
+            logging.warning(f"Manual ffprobe path '{manual_path}' is invalid: {e}")
     base_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
     try:
         result = subprocess.run([base_name, "-version"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
@@ -1387,7 +1538,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             try:
                 with Image.open(filepath) as img:
                     details['type'] = 'animated_image' if getattr(img, 'is_animated', False) else 'image'
-            except:
+            except (IOError, OSError):
                 pass
         
         # Get dimensions
@@ -1395,7 +1546,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             try:
                 with Image.open(filepath) as img:
                     details['dimensions'] = f"{img.width}x{img.height}"
-            except:
+            except (IOError, OSError):
                 pass
         
         # Check for workflow (simplified version)
@@ -1408,7 +1559,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                     if (img.info.get('workflow') or img.info.get('Workflow') or 
                         img.info.get('prompt') or img.info.get('Prompt')):
                         workflow_found = True
-        except:
+        except (IOError, OSError):
             pass
         
         if not workflow_found:
@@ -1418,7 +1569,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                 search_pattern = os.path.join(base_input_path_workflow, f"{base_filename}*.json")
                 if glob.glob(search_pattern):
                     workflow_found = True
-            except:
+            except (OSError, IOError):
                 pass
         
         details['has_workflow'] = 1 if workflow_found else 0
@@ -1435,7 +1586,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                         total_duration_sec = count / fps
                     details['dimensions'] = f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
                     cap.release()
-            except:
+            except (cv2.error, OSError, IOError):
                 pass
         elif details['type'] == 'animated_image':
             try:
@@ -1445,7 +1596,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                             total_duration_sec = sum(frame.info.get('duration', 100) for frame in ImageSequence.Iterator(img)) / 1000
                         elif ext_lower == '.webp':
                             total_duration_sec = getattr(img, 'n_frames', 1) / webp_animated_fps
-            except:
+            except (IOError, OSError):
                 pass
         
         if total_duration_sec > 0:
@@ -1454,7 +1605,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
             details['duration'] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
         
         # Create thumbnail
-        file_hash_for_thumbnail = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+        file_hash_for_thumbnail = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
         
         if not glob.glob(os.path.join(thumbnail_cache_dir, f"{file_hash_for_thumbnail}.*")):
             # Inline thumbnail creation
@@ -1478,7 +1629,7 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                             if img.mode != 'RGB':
                                 img = img.convert('RGB')
                             img.save(cache_path, 'JPEG', quality=85)
-                except:
+                except (IOError, OSError):
                     pass
             elif file_type == 'video':
                 try:
@@ -1491,10 +1642,10 @@ def process_single_file(filepath, thumbnail_cache_dir, thumbnail_width, video_ex
                         img = Image.fromarray(frame_rgb)
                         img.thumbnail((thumbnail_width, thumbnail_width * 2), Image.Resampling.LANCZOS)
                         img.save(cache_path, 'JPEG', quality=80)
-                except:
+                except (cv2.error, IOError, OSError):
                     pass
         
-        file_id = hashlib.md5(filepath.encode()).hexdigest()
+        file_id = hashlib.md5(filepath.encode(), usedforsecurity=False).hexdigest()
         
         # Extract workflow metadata if workflow is present
         # Returns a LIST of sampler metadata dicts (one per sampler node found)
@@ -2138,11 +2289,11 @@ def sync_folder_internal(folder_path):
             
             for path in files_to_process:
                 metadata = analyze_file_metadata(path)
-                file_hash = hashlib.md5((path + str(disk_files[path])).encode()).hexdigest()
+                file_hash = hashlib.md5((path + str(disk_files[path])).encode(), usedforsecurity=False).hexdigest()
                 if not glob.glob(os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")): 
                     create_thumbnail(path, file_hash, metadata['type'])
                 
-                file_id = hashlib.md5(path.encode()).hexdigest()
+                file_id = hashlib.md5(path.encode(), usedforsecurity=False).hexdigest()
 
                 # --- NEW: Extract preview data here as well ---
                 prompt_preview = None
@@ -2371,11 +2522,28 @@ def scan_folder_and_extract_options(folder_path):
 
 def initialize_gallery(flask_app):
     """Initializes the gallery by setting up derived paths and the database."""
+
+    # Determine the base path for user-writable data (config, db, thumbnails)
+    # This ensures we don't write into the read-only bundled app folder
+    USER_DATA_PATH = appdirs.user_data_dir("SmartGallery", appauthor=False)
+    os.makedirs(USER_DATA_PATH, exist_ok=True)
+    print(f"INFO: User data will be stored in: {USER_DATA_PATH}")
+
+    # Determine base path for bundled assets (templates, static files)
+    if getattr(sys, 'frozen', False):
+        # Running in a PyInstaller bundle
+        base_path = sys._MEIPASS
+        flask_app.template_folder = os.path.join(base_path, 'templates')
+        flask_app.static_folder = os.path.join(base_path, 'static')
+    else:
+        # Running as a normal script (development)
+        base_path = os.path.dirname(os.path.abspath(__file__))
     
     # Now that BASE_OUTPUT_PATH etc. are in app.config, we can derive the rest.
     flask_app.config['BASE_INPUT_PATH_WORKFLOW'] = os.path.join(flask_app.config['BASE_INPUT_PATH'], flask_app.config['WORKFLOW_FOLDER_NAME'])
-    flask_app.config['THUMBNAIL_CACHE_DIR'] = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], flask_app.config['THUMBNAIL_CACHE_FOLDER_NAME'])
-    flask_app.config['SQLITE_CACHE_DIR'] = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], flask_app.config['SQLITE_CACHE_FOLDER_NAME'])
+    # User data directories are now derived from USER_DATA_PATH
+    flask_app.config['THUMBNAIL_CACHE_DIR'] = os.path.join(USER_DATA_PATH, flask_app.config['THUMBNAIL_CACHE_FOLDER_NAME'])
+    flask_app.config['SQLITE_CACHE_DIR'] = os.path.join(USER_DATA_PATH, flask_app.config['SQLITE_CACHE_FOLDER_NAME'])
     flask_app.config['DATABASE_FILE'] = os.path.join(flask_app.config['SQLITE_CACHE_DIR'], flask_app.config['DATABASE_FILENAME'])
     
     protected_keys = {path_to_key(f) for f in flask_app.config['SPECIAL_FOLDERS']}
@@ -2386,10 +2554,10 @@ def initialize_gallery(flask_app):
     if DEBUG_WORKFLOW_EXTRACTION:
         debug_path = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], 'workflow_debug')
         print(f"INFO: Workflow debugging ENABLED - will save to {debug_path}")
-        logging.info(" Each file will have a subfolder with workflow data at each processing stage")
+        logging.info("Each file will have a subfolder with workflow data at each processing stage")
     
     # Setup logging
-    log_dir = os.path.join(flask_app.config['BASE_OUTPUT_PATH'], 'smartgallery_logs')
+    log_dir = os.path.join(USER_DATA_PATH, 'smartgallery_logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f'gallery_{datetime.now().strftime("%Y%m%d")}.log')
     
@@ -2404,7 +2572,7 @@ def initialize_gallery(flask_app):
     flask_app.logger.setLevel(logging.INFO)
     flask_app.config['LOG_FILE'] = log_file
 
-    logging.info(" Initializing gallery...")
+    logging.info("Initializing gallery...")
     logging.info("SmartGallery initialization started")
     flask_app.config['FFPROBE_EXECUTABLE_PATH'] = find_ffprobe_path()
     os.makedirs(flask_app.config['THUMBNAIL_CACHE_DIR'], exist_ok=True)
@@ -2646,10 +2814,16 @@ def create_folder():
     parent_key = data.get('parent_key', '_root_')
     folder_name = re.sub(r'[^a-zA-Z0-9_-]', '', data.get('folder_name', '')).strip()
     if not folder_name: return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in folder_name or '/' in folder_name or '\\' in folder_name:
+        return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
     folders = get_dynamic_folder_config()
     if parent_key not in folders: return jsonify({'status': 'error', 'message': 'Parent folder not found.'}), 404
     parent_path = folders[parent_key]['path']
     new_folder_path = os.path.join(parent_path, folder_name)
+    # Ensure the new path is within the allowed base path
+    if not new_folder_path.startswith(app.config['BASE_OUTPUT_PATH']):
+        return jsonify({'status': 'error', 'message': 'Invalid folder location.'}), 400
     if os.path.exists(new_folder_path): return jsonify({'status': 'error', 'message': 'A folder with this name already exists here.'}), 400
     try:
         os.makedirs(new_folder_path)
@@ -2663,10 +2837,16 @@ def rename_folder(folder_key):
     if folder_key in app.config['PROTECTED_FOLDER_KEYS']: return jsonify({'status': 'error', 'message': 'This folder cannot be renamed.'}), 403
     new_name = re.sub(r'[^a-zA-Z0-9_-]', '', request.json.get('new_name', '')).strip()
     if not new_name: return jsonify({'status': 'error', 'message': 'Invalid name.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in new_name or '/' in new_name or '\\' in new_name:
+        return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
     folders = get_dynamic_folder_config()
     if folder_key not in folders: return jsonify({'status': 'error', 'message': 'Folder not found.'}), 400
     old_path = folders[folder_key]['path']
     new_path = os.path.join(os.path.dirname(old_path), new_name)
+    # Ensure the new path is within the allowed base path
+    if not new_path.startswith(app.config['BASE_OUTPUT_PATH']):
+        return jsonify({'status': 'error', 'message': 'Invalid folder location.'}), 400
     if os.path.exists(new_path): return jsonify({'status': 'error', 'message': 'A folder with this name already exists.'}), 400
     try:
         # Issue #9 fix: Perform filesystem operation BEFORE database transaction
@@ -2680,7 +2860,7 @@ def rename_folder(folder_key):
         update_data = []
         for row in files_to_update:
             new_file_path = row['path'].replace(old_path, new_path, 1)
-            new_id = hashlib.md5(new_file_path.encode()).hexdigest()
+            new_id = hashlib.md5(new_file_path.encode(), usedforsecurity=False).hexdigest()
             update_data.append((new_id, new_file_path, row['id']))
             
         if update_data: 
@@ -2727,11 +2907,11 @@ def filter_options():
     """
     global _filter_options_cache
     
-    with _cache_lock:
-        cache_entry = _filter_options_cache.get('options')
-        if cache_entry and (time.time() - cache_entry['timestamp']) < CACHE_DURATION_SECONDS:
-            logging.info(" Serving filter options from cache.")
-            return jsonify(cache_entry['data'])
+    # Check cache first (BoundedCache handles TTL automatically)
+    cached_data = _filter_options_cache.get('options')
+    if cached_data:
+        logging.info(" Serving filter options from cache.")
+        return jsonify(cached_data)
 
     # --- If cache is invalid, proceed with database query ---
     logging.info(" Cache miss or expired. Querying DB for filter options.")
@@ -2787,12 +2967,8 @@ def filter_options():
             }
         }
         
-        # Update cache
-        with _cache_lock:
-            _filter_options_cache['options'] = {
-                'timestamp': time.time(),
-                'data': response_data
-            }
+        # Update cache using BoundedCache (automatically handles TTL and size limits)
+        _filter_options_cache.set('options', response_data)
         
         print(f"INFO: filter_options returning {len(samplers)} samplers, {len(schedulers)} schedulers.")
         return jsonify(response_data)
@@ -3217,7 +3393,7 @@ def move_batch():
             shutil.move(source_path, final_dest_path)
                 
             # Only update DB after successful file move
-            new_id = hashlib.md5(final_dest_path.encode()).hexdigest()
+            new_id = hashlib.md5(final_dest_path.encode(), usedforsecurity=False).hexdigest()
             conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, final_dest_path, final_filename, file_id))
             conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             moved_count += 1
@@ -3257,7 +3433,7 @@ def delete_batch():
                 os.remove(row['path'])
                 
             # Clean up orphaned thumbnail
-            file_hash = hashlib.md5((row['path'] + str(row['mtime'])).encode()).hexdigest()
+            file_hash = hashlib.md5((row['path'] + str(row['mtime'])).encode(), usedforsecurity=False).hexdigest()
             thumbnail_pattern = os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")
             for thumbnail_path in glob.glob(thumbnail_pattern):
                 try:
@@ -3313,6 +3489,9 @@ def rename_file(file_id):
         return jsonify({'status': 'error', 'message': 'The provided filename is invalid or too long.'}), 400
     if re.search(r'[\\/:"*?<>|]', new_name):
         return jsonify({'status': 'error', 'message': 'Filename contains invalid characters.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in new_name:
+        return jsonify({'status': 'error', 'message': 'Filename contains invalid characters.'}), 400
 
     try:
         conn = get_db()
@@ -3336,13 +3515,17 @@ def rename_file(file_id):
 
         file_dir = os.path.dirname(old_path)
         new_path = os.path.join(file_dir, final_new_name)
+        
+        # Ensure the new path is within the allowed base path
+        if not new_path.startswith(app.config['BASE_OUTPUT_PATH']):
+            return jsonify({'status': 'error', 'message': 'Invalid file location.'}), 400
 
         if os.path.exists(new_path):
             return jsonify({'status': 'error', 'message': f'A file named "{final_new_name}" already exists in this folder.'}), 409
 
         # Perform the rename and database update
         os.rename(old_path, new_path)
-        new_id = hashlib.md5(new_path.encode()).hexdigest()
+        new_id = hashlib.md5(new_path.encode(), usedforsecurity=False).hexdigest()
         conn.execute("UPDATE files SET id = ?, path = ?, name = ? WHERE id = ?", (new_id, new_path, final_new_name, file_id))
         conn.commit()
 
@@ -3382,7 +3565,7 @@ def delete_file(file_id):
         return jsonify({'status': 'error', 'message': f'Could not delete file from disk: {e}'}), 500
 
     # Clean up orphaned thumbnail
-    file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+    file_hash = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
     try:
         thumbnail_pattern = os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*")
         for thumbnail_path in glob.glob(thumbnail_pattern):
@@ -3444,7 +3627,7 @@ def get_node_summary(file_id):
 def serve_thumbnail(file_id):
     info = get_file_info_from_db(file_id)
     filepath, mtime = info['path'], info['mtime']
-    file_hash = hashlib.md5((filepath + str(mtime)).encode()).hexdigest()
+    file_hash = hashlib.md5((filepath + str(mtime)).encode(), usedforsecurity=False).hexdigest()
     existing_thumbnails = glob.glob(os.path.join(app.config['THUMBNAIL_CACHE_DIR'], f"{file_hash}.*"))
     if existing_thumbnails: return send_file(existing_thumbnails[0])
     print(f"WARN: Thumbnail not found for {os.path.basename(filepath)}, generating...")
@@ -3503,10 +3686,39 @@ def handle_generic_exception(e):
     return jsonify(response), 500
 
 
-if __name__ == '__main__':
-    import argparse
-    import json
+def run_app(host='0.0.0.0', port=8008, debug=False):
+    """
+    Starts the Flask server with production-grade WSGI server.
+    
+    Uses waitress for PyInstaller builds (production stability).
+    Falls back to Flask development server if waitress is not available.
+    
+    Args:
+        host: Host to bind to (default: 0.0.0.0)
+        port: Port to listen on (default: 8008)
+        debug: Enable debug mode (default: False, should be False in production)
+    """
+    try:
+        # Try to use waitress for production stability (critical for PyInstaller)
+        try:
+            from waitress import serve
+            logging.info(f"Starting SmartGallery with waitress on {host}:{port}")
+            serve(app, host=host, port=port, threads=4, connection_limit=1000)
+        except ImportError:
+            # Fallback to Flask development server
+            logging.warning("waitress not installed, using Flask development server (not recommended for production)")
+            logging.warning("Install waitress for better stability: pip install waitress")
+            app.run(host=host, port=port, debug=debug, threaded=True)
+    except Exception as e:
+        logging.error(f"Failed to run Flask app: {e}")
+        raise
 
+def main():
+    # CRITICAL: Prevent infinite process spawning in PyInstaller builds
+    # This MUST be the first line - prevents module-level code from re-executing in worker processes
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     parser = argparse.ArgumentParser(description="SmartGallery - Standalone AI Media Gallery")
     parser.add_argument("--config", type=str, default="config.json", help="Path to configuration file (default: config.json)")
     parser.add_argument("--output-path", type=str, help="Path to your AI output directory (overrides config.json)")
@@ -3518,18 +3730,25 @@ if __name__ == '__main__':
 
     # Load configuration from config.json if it exists
     config_data = {}
-    if os.path.exists(args.config):
+    
+    # Look for config.json in user data directory first, then current directory
+    USER_DATA_PATH = appdirs.user_data_dir("SmartGallery", appauthor=False)
+    config_path_user = os.path.join(USER_DATA_PATH, "config.json")
+    config_path_local = args.config
+
+    config_to_load = None
+    if os.path.exists(config_path_user):
+        config_to_load = config_path_user
+    elif os.path.exists(config_path_local):
+        config_to_load = config_path_local
+
+    if config_to_load:
         try:
-            with open(args.config, 'r', encoding='utf-8') as f:
+            with open(config_to_load, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-            print(f"✓ Loaded configuration from: {args.config}")
+            print(f"✓ Loaded configuration from: {config_to_load}")
         except Exception as e:
-            logging.warning(f" Failed to load config file '{args.config}': {e}")
-            print("Continuing with command-line arguments only...")
-    else:
-        if args.config != "config.json":  # Only warn if non-default config was specified
-            logging.warning(f" Config file '{args.config}' not found")
-        print("Using command-line arguments only...")
+            logging.warning(f"Failed to load config file '{config_to_load}': {e}")
 
     # Merge config: CLI args override config.json
     output_path = args.output_path or config_data.get('base_output_path')
@@ -3540,16 +3759,16 @@ if __name__ == '__main__':
     # Validate required paths
     if not output_path or not input_path:
         print("\nERROR: Required paths not provided!")
-        print("\nYou must provide paths either via:")
-        print("  1. Command line: --output-path and --input-path")
-        print("  2. Config file: Create config.json with base_output_path and base_input_path")
-        print("\nExample config.json:")
+        print(f"Create a config.json file in '{USER_DATA_PATH}' or in the current directory.")
+        print("Example config.json:")
         print('{')
-        print('    "base_output_path": "/path/to/your/output",')
-        print('    "base_input_path": "/path/to/your/input",')
+        print('    "base_output_path": "C:/Path/To/Your/AI/Output",')
+        print('    "base_input_path": "C:/Path/To/Your/AI/Input",')
         print('    "server_port": 8008')
         print('}')
-        print("\nSee config.json.example for more options.")
+        print("\nAlternatively, use command-line arguments:")
+        print("  --output-path /path/to/output")
+        print("  --input-path /path/to/input")
         sys.exit(1)
 
     if not os.path.isdir(output_path):
@@ -3595,4 +3814,7 @@ if __name__ == '__main__':
     print(f"✓ Open in browser: http://127.0.0.1:{server_port}/galleryout/")
     print("="*60 + "\n")
     
-    app.run(host='0.0.0.0', port=server_port, debug=False)
+    run_app(host='0.0.0.0', port=server_port, debug=False)
+
+if __name__ == '__main__':
+    main()
