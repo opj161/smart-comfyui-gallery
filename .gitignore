@@ -50,3 +50,5 @@ bin\ffprobe.exe
 MEMORY_LEAK_FIXES.md
 .gitignore
 smartgallery copy.spec
+.gitignore
+README_cleaned.md

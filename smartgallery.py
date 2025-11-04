@@ -2808,10 +2808,16 @@ def create_folder():
     parent_key = data.get('parent_key', '_root_')
     folder_name = re.sub(r'[^a-zA-Z0-9_-]', '', data.get('folder_name', '')).strip()
     if not folder_name: return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in folder_name or '/' in folder_name or '\\' in folder_name:
+        return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
     folders = get_dynamic_folder_config()
     if parent_key not in folders: return jsonify({'status': 'error', 'message': 'Parent folder not found.'}), 404
     parent_path = folders[parent_key]['path']
     new_folder_path = os.path.join(parent_path, folder_name)
+    # Ensure the new path is within the allowed base path
+    if not new_folder_path.startswith(app.config['BASE_OUTPUT_PATH']):
+        return jsonify({'status': 'error', 'message': 'Invalid folder location.'}), 400
     if os.path.exists(new_folder_path): return jsonify({'status': 'error', 'message': 'A folder with this name already exists here.'}), 400
     try:
         os.makedirs(new_folder_path)
@@ -2825,10 +2831,16 @@ def rename_folder(folder_key):
     if folder_key in app.config['PROTECTED_FOLDER_KEYS']: return jsonify({'status': 'error', 'message': 'This folder cannot be renamed.'}), 403
     new_name = re.sub(r'[^a-zA-Z0-9_-]', '', request.json.get('new_name', '')).strip()
     if not new_name: return jsonify({'status': 'error', 'message': 'Invalid name.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in new_name or '/' in new_name or '\\' in new_name:
+        return jsonify({'status': 'error', 'message': 'Invalid folder name provided.'}), 400
     folders = get_dynamic_folder_config()
     if folder_key not in folders: return jsonify({'status': 'error', 'message': 'Folder not found.'}), 400
     old_path = folders[folder_key]['path']
     new_path = os.path.join(os.path.dirname(old_path), new_name)
+    # Ensure the new path is within the allowed base path
+    if not new_path.startswith(app.config['BASE_OUTPUT_PATH']):
+        return jsonify({'status': 'error', 'message': 'Invalid folder location.'}), 400
     if os.path.exists(new_path): return jsonify({'status': 'error', 'message': 'A folder with this name already exists.'}), 400
     try:
         # Issue #9 fix: Perform filesystem operation BEFORE database transaction
@@ -3471,6 +3483,9 @@ def rename_file(file_id):
         return jsonify({'status': 'error', 'message': 'The provided filename is invalid or too long.'}), 400
     if re.search(r'[\\/:"*?<>|]', new_name):
         return jsonify({'status': 'error', 'message': 'Filename contains invalid characters.'}), 400
+    # Additional security: prevent path traversal
+    if '..' in new_name:
+        return jsonify({'status': 'error', 'message': 'Filename contains invalid characters.'}), 400
 
     try:
         conn = get_db()
@@ -3494,6 +3509,10 @@ def rename_file(file_id):
 
         file_dir = os.path.dirname(old_path)
         new_path = os.path.join(file_dir, final_new_name)
+        
+        # Ensure the new path is within the allowed base path
+        if not new_path.startswith(app.config['BASE_OUTPUT_PATH']):
+            return jsonify({'status': 'error', 'message': 'Invalid file location.'}), 400
 
         if os.path.exists(new_path):
             return jsonify({'status': 'error', 'message': f'A file named "{final_new_name}" already exists in this folder.'}), 409
