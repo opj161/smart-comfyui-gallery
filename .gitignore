@@ -48,8 +48,15 @@ smart-comfyui-gallery.xml
 bin/
 bin\ffprobe.exe
 MEMORY_LEAK_FIXES.md
-.gitignore
 smartgallery copy.spec
-.gitignore
 README_cleaned.md
 .docs/
+
+# Tauri/Rust - Build artifacts
+tauri-sveltekit-main/src-tauri/target/
+tauri-sveltekit-main/src-tauri/Cargo.lock
+
+# Node.js
+tauri-sveltekit-main/node_modules/
+tauri-sveltekit-main/.svelte-kit/
+tauri-sveltekit-main/build/tauri-sveltekit-main/src-tauri/gen/
