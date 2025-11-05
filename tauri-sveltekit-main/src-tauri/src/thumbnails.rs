@@ -2,7 +2,7 @@
 // Creates thumbnails for images and videos
 
 use std::path::{Path, PathBuf};
-use image::{DynamicImage, imageops::FilterType, ImageFormat};
+use image::{DynamicImage, imageops::FilterType, ImageFormat, GenericImageView};
 use std::fs;
 
 #[derive(Debug, Clone)]

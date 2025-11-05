@@ -3,8 +3,8 @@
 
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use sqlx::SqlitePool;
-use tauri::State;
+use sqlx::{SqlitePool, Row};
+use tauri::{State, Emitter};
 
 use crate::models::*;
 use crate::database;
@@ -296,14 +296,14 @@ pub async fn get_stats(
     let favorites_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM files WHERE is_favorite = 1"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("Failed to count favorites: {}", e))?;
     
     let with_workflow_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM files WHERE has_workflow = 1"
     )
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("Failed to count workflows: {}", e))?;
     
@@ -386,7 +386,7 @@ pub async fn get_filter_options(
          WHERE model_name IS NOT NULL 
          ORDER BY model_name"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to fetch models: {}", e))?;
     
@@ -396,7 +396,7 @@ pub async fn get_filter_options(
          WHERE sampler_name IS NOT NULL 
          ORDER BY sampler_name"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to fetch samplers: {}", e))?;
     
@@ -406,7 +406,7 @@ pub async fn get_filter_options(
          WHERE scheduler IS NOT NULL 
          ORDER BY scheduler"
     )
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to fetch schedulers: {}", e))?;
     
@@ -547,7 +547,7 @@ pub async fn search_files(
     .bind(&search_pattern)
     .bind(per_page as i64)
     .bind(offset as i64)
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to search files: {}", e))?;
     
@@ -571,7 +571,7 @@ pub async fn search_files(
     )
     .bind(&search_pattern)
     .bind(&search_pattern)
-    .fetch_one(pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("Failed to count search results: {}", e))? as usize;
     
@@ -649,7 +649,7 @@ pub async fn get_files_filtered(
     let files = sqlx::query(&query)
         .bind(per_page as i64)
         .bind(offset as i64)
-        .fetch_all(pool)
+        .fetch_all(&pool)
         .await
         .map_err(|e| format!("Failed to fetch filtered files: {}", e))?;
     
@@ -686,7 +686,7 @@ pub async fn get_files_filtered(
 #[tauri::command]
 pub async fn create_folder(
     folder_path: String,
-    state: State<'_, Arc<Mutex<AppState>>>,
+    _state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<String, String> {
     std::fs::create_dir_all(&folder_path)
         .map_err(|e| format!("Failed to create folder: {}", e))?;
