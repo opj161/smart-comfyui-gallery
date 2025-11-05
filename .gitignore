@@ -20,6 +20,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Except SvelteKit src/lib
+!tauri-sveltekit-main/src/lib/
+
 # Virtual Environment
 venv/
 .venv/
@@ -55,6 +58,7 @@ README_cleaned.md
 # Tauri/Rust - Build artifacts
 tauri-sveltekit-main/src-tauri/target/
 tauri-sveltekit-main/src-tauri/Cargo.lock
+tauri-sveltekit-main/src-tauri/gen/
 
 # Node.js
 tauri-sveltekit-main/node_modules/
