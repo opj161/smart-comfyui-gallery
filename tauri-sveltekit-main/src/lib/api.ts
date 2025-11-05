@@ -6,7 +6,8 @@ import type {
 	WorkflowMetadata,
 	PaginatedFiles,
 	FilterOptions,
-	SyncProgress
+	SyncProgress,
+	GalleryFilters
 } from '$lib/types';
 
 // Initialize gallery
@@ -83,6 +84,48 @@ export async function healthCheck(): Promise<string> {
 // Get filter options
 export async function getFilterOptions(): Promise<FilterOptions> {
 	return await invoke('get_filter_options');
+}
+
+// Rename file
+export async function renameFile(fileId: string, newName: string): Promise<void> {
+	return await invoke('rename_file', { fileId, newName });
+}
+
+// Move files
+export async function moveFiles(fileIds: string[], targetFolder: string): Promise<void> {
+	return await invoke('move_files', { fileIds, targetFolder });
+}
+
+// Search files
+export async function searchFiles(
+	query: string,
+	page: number,
+	perPage: number
+): Promise<PaginatedFiles> {
+	return await invoke('search_files', { query, page, perPage });
+}
+
+// Get files with advanced filtering
+export async function getFilesFiltered(
+	filters: GalleryFilters,
+	page: number,
+	perPage: number
+): Promise<PaginatedFiles> {
+	return await invoke('get_files_filtered', { filters, page, perPage });
+}
+
+// Create folder
+export async function createFolder(folderPath: string): Promise<string> {
+	return await invoke('create_folder', { folderPath });
+}
+
+// Get configuration
+export async function getConfig(): Promise<{
+	output_path: string | null;
+	input_path: string | null;
+	initialized: boolean;
+}> {
+	return await invoke('get_config');
 }
 
 // Listen to sync progress events

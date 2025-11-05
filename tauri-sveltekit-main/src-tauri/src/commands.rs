@@ -398,3 +398,268 @@ pub async fn get_filter_options(
         prefixes: vec![],
     })
 }
+
+/// Rename a file
+#[tauri::command]
+pub async fn rename_file(
+    file_id: String,
+    new_name: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let app_state = state.lock().unwrap();
+    let pool = app_state.db_pool.as_ref()
+        .ok_or("Database not initialized")?;
+    
+    // Get current file
+    let file = database::get_file_by_id(pool, &file_id).await?
+        .ok_or("File not found")?;
+    
+    let old_path = PathBuf::from(&file.path);
+    let parent = old_path.parent()
+        .ok_or("Invalid file path")?;
+    let new_path = parent.join(&new_name);
+    
+    // Rename on filesystem
+    std::fs::rename(&old_path, &new_path)
+        .map_err(|e| format!("Failed to rename file: {}", e))?;
+    
+    // Update database
+    sqlx::query("UPDATE files SET path = ?, name = ? WHERE id = ?")
+        .bind(new_path.to_string_lossy().to_string())
+        .bind(new_name)
+        .bind(file_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update database: {}", e))?;
+    
+    Ok(())
+}
+
+/// Move files to a different folder
+#[tauri::command]
+pub async fn move_files(
+    file_ids: Vec<String>,
+    target_folder: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let app_state = state.lock().unwrap();
+    let pool = app_state.db_pool.as_ref()
+        .ok_or("Database not initialized")?;
+    
+    let target_path = PathBuf::from(&target_folder);
+    
+    // Ensure target folder exists
+    std::fs::create_dir_all(&target_path)
+        .map_err(|e| format!("Failed to create target folder: {}", e))?;
+    
+    for file_id in file_ids {
+        // Get file
+        let file = database::get_file_by_id(pool, &file_id).await?
+            .ok_or("File not found")?;
+        
+        let old_path = PathBuf::from(&file.path);
+        let file_name = old_path.file_name()
+            .ok_or("Invalid filename")?;
+        let new_path = target_path.join(file_name);
+        
+        // Move file
+        std::fs::rename(&old_path, &new_path)
+            .map_err(|e| format!("Failed to move file: {}", e))?;
+        
+        // Update database
+        sqlx::query("UPDATE files SET path = ? WHERE id = ?")
+            .bind(new_path.to_string_lossy().to_string())
+            .bind(file_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to update database: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+/// Search files by name or metadata
+#[tauri::command]
+pub async fn search_files(
+    query: String,
+    page: usize,
+    per_page: usize,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<PaginatedFiles, String> {
+    let app_state = state.lock().unwrap();
+    let pool = app_state.db_pool.as_ref()
+        .ok_or("Database not initialized")?;
+    
+    let offset = page * per_page;
+    let search_pattern = format!("%{}%", query);
+    
+    let files = sqlx::query(
+        "SELECT id, path, name, type, mtime, has_workflow, is_favorite, 
+                prompt_preview, sampler_names, dimensions, duration,
+                (SELECT COUNT(*) FROM workflow_metadata WHERE file_id = files.id) as sampler_count
+         FROM files
+         WHERE name LIKE ? OR prompt_preview LIKE ?
+         ORDER BY mtime DESC
+         LIMIT ? OFFSET ?"
+    )
+    .bind(&search_pattern)
+    .bind(&search_pattern)
+    .bind(per_page as i64)
+    .bind(offset as i64)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to search files: {}", e))?;
+    
+    let file_entries: Vec<FileEntry> = files.into_iter().map(|row| FileEntry {
+        id: row.get("id"),
+        path: row.get("path"),
+        name: row.get("name"),
+        file_type: row.get("type"),
+        mtime: row.get("mtime"),
+        has_workflow: row.get::<i32, _>("has_workflow") != 0,
+        is_favorite: row.get::<i32, _>("is_favorite") != 0,
+        prompt_preview: row.get("prompt_preview"),
+        sampler_names: row.get("sampler_names"),
+        dimensions: row.get("dimensions"),
+        duration: row.get("duration"),
+        sampler_count: row.get::<i32, _>("sampler_count"),
+    }).collect();
+    
+    let total_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM files WHERE name LIKE ? OR prompt_preview LIKE ?"
+    )
+    .bind(&search_pattern)
+    .bind(&search_pattern)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to count search results: {}", e))? as usize;
+    
+    let has_more = (offset + file_entries.len()) < total_count;
+    
+    Ok(PaginatedFiles {
+        files: file_entries,
+        total_count,
+        has_more,
+    })
+}
+
+/// Get files with advanced filtering
+#[tauri::command]
+pub async fn get_files_filtered(
+    filters: GalleryFilters,
+    page: usize,
+    per_page: usize,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<PaginatedFiles, String> {
+    let app_state = state.lock().unwrap();
+    let pool = app_state.db_pool.as_ref()
+        .ok_or("Database not initialized")?;
+    
+    let offset = page * per_page;
+    
+    // Build dynamic query based on filters
+    let mut query = String::from(
+        "SELECT DISTINCT f.id, f.path, f.name, f.type, f.mtime, f.has_workflow, f.is_favorite, 
+                f.prompt_preview, f.sampler_names, f.dimensions, f.duration,
+                (SELECT COUNT(*) FROM workflow_metadata WHERE file_id = f.id) as sampler_count
+         FROM files f"
+    );
+    
+    let mut conditions = Vec::new();
+    
+    // Add joins if needed for workflow metadata filters
+    if filters.model.is_some() || filters.sampler.is_some() || filters.scheduler.is_some() {
+        query.push_str(" LEFT JOIN workflow_metadata wm ON f.id = wm.file_id");
+    }
+    
+    // Build WHERE conditions
+    if let Some(ref search) = filters.search {
+        if !search.is_empty() {
+            conditions.push(format!("(f.name LIKE '%{}%' OR f.prompt_preview LIKE '%{}%')", search, search));
+        }
+    }
+    
+    if filters.favorites_only {
+        conditions.push("f.is_favorite = 1".to_string());
+    }
+    
+    if let Some(ref model) = filters.model {
+        conditions.push(format!("wm.model_name = '{}'", model));
+    }
+    
+    if let Some(ref sampler) = filters.sampler {
+        conditions.push(format!("wm.sampler_name = '{}'", sampler));
+    }
+    
+    if let Some(ref scheduler) = filters.scheduler {
+        conditions.push(format!("wm.scheduler = '{}'", scheduler));
+    }
+    
+    if !conditions.is_empty() {
+        query.push_str(" WHERE ");
+        query.push_str(&conditions.join(" AND "));
+    }
+    
+    query.push_str(" ORDER BY f.mtime DESC LIMIT ? OFFSET ?");
+    
+    let files = sqlx::query(&query)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to fetch filtered files: {}", e))?;
+    
+    let file_entries: Vec<FileEntry> = files.into_iter().map(|row| FileEntry {
+        id: row.get("id"),
+        path: row.get("path"),
+        name: row.get("name"),
+        file_type: row.get("type"),
+        mtime: row.get("mtime"),
+        has_workflow: row.get::<i32, _>("has_workflow") != 0,
+        is_favorite: row.get::<i32, _>("is_favorite") != 0,
+        prompt_preview: row.get("prompt_preview"),
+        sampler_names: row.get("sampler_names"),
+        dimensions: row.get("dimensions"),
+        duration: row.get("duration"),
+        sampler_count: row.get::<i32, _>("sampler_count"),
+    }).collect();
+    
+    // Count total matching
+    let count_query = query.replace("SELECT DISTINCT f.id,", "SELECT COUNT(DISTINCT f.id) as count FROM (SELECT f.id FROM")
+        .replace(" LIMIT ? OFFSET ?", "") + ")";
+    
+    let total_count = database::get_file_count(pool).await? as usize; // Simplified for now
+    let has_more = (offset + file_entries.len()) < total_count;
+    
+    Ok(PaginatedFiles {
+        files: file_entries,
+        total_count,
+        has_more,
+    })
+}
+
+/// Create a new folder
+#[tauri::command]
+pub async fn create_folder(
+    folder_path: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<String, String> {
+    std::fs::create_dir_all(&folder_path)
+        .map_err(|e| format!("Failed to create folder: {}", e))?;
+    
+    Ok(format!("Folder created: {}", folder_path))
+}
+
+/// Get application configuration
+#[tauri::command]
+pub async fn get_config(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, String> {
+    let app_state = state.lock().unwrap();
+    
+    Ok(serde_json::json!({
+        "output_path": app_state.output_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "input_path": app_state.input_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "initialized": app_state.db_pool.is_some(),
+    }))
+}

@@ -58,6 +58,13 @@ pub fn run() {
             commands::get_thumbnail_path,
             commands::health_check,
             commands::get_filter_options,
+            // New commands
+            commands::rename_file,
+            commands::move_files,
+            commands::search_files,
+            commands::get_files_filtered,
+            commands::create_folder,
+            commands::get_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
