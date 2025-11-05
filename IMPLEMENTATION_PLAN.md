@@ -3,28 +3,41 @@
 ## Executive Summary
 This is a **complete, non-incremental** rewrite of SmartGallery from Python/Flask to Tauri/Rust/SvelteKit. All 26 Flask endpoints, the ComfyUI workflow parser, database layer, file scanning, and UI will be ported in one comprehensive effort.
 
-## Phase Breakdown (Direct, Complete Approach)
+## Current Progress: Phase 2 - Core Backend (60% Complete)
 
-### Phase 2: Core Rust Backend (Week 1-2)
-**Goal**: Complete backend logic in Rust with full feature parity
+### ✅ Completed Tasks
 
-#### 2.1 Database Layer (`database.rs`) - 2 days
-- [ ] SQLite connection pool with sqlx
-- [ ] Schema: `files` + `workflow_metadata` tables with all indices
-- [ ] CRUD operations: insert_file, update_file, delete_files, get_file_by_id
-- [ ] Query builders: filter files, paginate, get stats
-- [ ] Transaction support for batch operations
+#### Phase 1: Foundation (100% Complete)
+- ✅ Tauri/SvelteKit starter template verified and building
+- ✅ Core Rust data structures (FileEntry, WorkflowMetadata, FolderConfig, SyncProgress, FilterOptions, GalleryFilters, PaginatedFiles, AppConfig)
+- ✅ TypeScript type definitions matching Rust models
+- ✅ IPC bridge established with test commands
+- ✅ All dependencies installed (@tauri-apps/api, system libs)
+- ✅ .gitignore configured for build artifacts
 
-#### 2.2 Workflow Parser (`parser.rs`) - 3 days
-- [ ] Port ComfyUIWorkflowParser (520 lines, most complex)
-- [ ] Dual format support (UI and API workflows)
-- [ ] Node type detection (40+ node types)
-- [ ] Graph traversal: backward tracing for inputs
-- [ ] Extract: model, sampler, scheduler, cfg, steps, prompts, dimensions
-- [ ] Multi-sampler support (one file = multiple sampler nodes)
-- [ ] Unit tests with sample workflows
+#### Phase 2: Core Rust Backend (60% Complete - In Progress)
 
-#### 2.3 File System Scanner (`scanner.rs`) - 2 days
+**✅ 2.1 Database Layer (`database.rs`) - COMPLETE (370 lines)**
+- ✅ SQLite connection pool with sqlx
+- ✅ WAL mode for concurrency
+- ✅ Schema: `files` + `workflow_metadata` tables with all 14 indices
+- ✅ CRUD operations: upsert_file, get_file_by_id, delete_file, delete_files
+- ✅ Batch operations: toggle_favorite, batch_set_favorite
+- ✅ Workflow metadata: insert_workflow_metadata, get_workflow_metadata
+- ✅ Sync helpers: get_all_file_paths, get_file_count
+- ✅ 100% schema compatibility with Python version
+
+**✅ 2.2 Workflow Parser (`parser.rs`) - COMPLETE (435 lines)**
+- ✅ Port ComfyUIWorkflowParser (520 lines Python → 435 lines Rust)
+- ✅ Dual format support (UI and API workflows)
+- ✅ Node type detection (40+ node types: samplers, loaders, prompts, schedulers)
+- ✅ Graph traversal: backward tracing for inputs
+- ✅ Extract: model, sampler, scheduler, cfg, steps, prompts, dimensions
+- ✅ Multi-sampler support (one file = multiple sampler nodes)
+- ✅ All Rust lifetime issues resolved - compiles successfully
+- ⏳ Unit tests with sample workflows (TODO: Next)
+
+**🔄 2.3 File System Scanner (`scanner.rs`) - IN PROGRESS**
 - [ ] Walkdir for recursive directory traversal
 - [ ] Parallel processing with Rayon (10x faster than Python)
 - [ ] Workflow extraction integration
@@ -32,18 +45,22 @@ This is a **complete, non-incremental** rewrite of SmartGallery from Python/Flas
 - [ ] Database sync: add, update, remove files
 - [ ] Progress events via Tauri emit
 
-#### 2.4 Thumbnail Generator (`thumbnails.rs`) - 1 day
+**📋 2.4 Thumbnail Generator (`thumbnails.rs`) - NEXT**
 - [ ] Image thumbnails: `image` crate resize
 - [ ] Video thumbnails: ffmpeg command execution
 - [ ] Thumbnail cache management
 - [ ] Hash-based deduplication
 
-#### 2.5 Metadata Extraction (`metadata.rs`) - 1 day
+**📋 2.5 Metadata Extraction (`metadata.rs`) - PENDING**
 - [ ] PNG workflow extraction (tEXt chunks)
 - [ ] Video workflow extraction (metadata tracks)
 - [ ] File dimension detection
 - [ ] Duration calculation for videos
 - [ ] Animated WebP detection
+
+---
+
+## Phase Breakdown (Direct, Complete Approach)
 
 ### Phase 3: Tauri Commands (Week 3)
 **Goal**: Expose all backend functionality via Tauri commands

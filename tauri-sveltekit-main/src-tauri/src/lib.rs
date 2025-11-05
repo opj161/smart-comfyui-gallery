@@ -2,6 +2,7 @@
 mod models;
 mod database;
 mod parser;
+mod scanner;
 
 // Test command to verify IPC bridge
 #[tauri::command]
