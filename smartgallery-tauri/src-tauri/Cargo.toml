@@ -1,8 +1,8 @@
 [package]
 name = "smartgallery-tauri"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "SmartGallery - AI Media Gallery with Universal Workflow Extraction"
+authors = ["Biagio Maffettone <biagiomaf@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -18,8 +18,27 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+tokio = { version = "1", features = ["full"] }
+
+# File system operations
+walkdir = "2"
+rayon = "1"
+
+# Image processing
+image = { version = "0.25", features = ["jpeg", "png", "webp"] }
+
+# Utilities
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+
 
