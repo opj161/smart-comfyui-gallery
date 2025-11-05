@@ -77,9 +77,12 @@ pub async fn get_files(
     per_page: usize,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<PaginatedFiles, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     // For now, return a simple implementation
     // Full implementation would include folder filtering, search, etc.
@@ -114,7 +117,7 @@ pub async fn get_files(
         sampler_count: row.get::<i32, _>("sampler_count"),
     }).collect();
     
-    let total_count = database::get_file_count(pool).await? as usize;
+    let total_count = database::get_file_count(&pool).await? as usize;
     let has_more = (offset + file_entries.len()) < total_count;
     
     Ok(PaginatedFiles {
@@ -130,11 +133,14 @@ pub async fn get_file_by_id(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Option<FileEntry>, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
-    database::get_file_by_id(pool, &file_id).await
+    database::get_file_by_id(&pool, &file_id).await
 }
 
 /// Get workflow metadata for a file
@@ -143,11 +149,14 @@ pub async fn get_workflow_metadata(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Vec<WorkflowMetadata>, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
-    database::get_workflow_metadata(pool, &file_id).await
+    database::get_workflow_metadata(&pool, &file_id).await
 }
 
 /// Toggle favorite status for a file
@@ -156,11 +165,14 @@ pub async fn toggle_favorite(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<bool, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
-    database::toggle_favorite(pool, &file_id).await
+    database::toggle_favorite(&pool, &file_id).await
 }
 
 /// Set favorite status for multiple files
@@ -170,11 +182,14 @@ pub async fn batch_favorite(
     favorite: bool,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
-    database::batch_set_favorite(pool, &file_ids, favorite).await
+    database::batch_set_favorite(&pool, &file_ids, favorite).await
 }
 
 /// Delete a single file
@@ -183,12 +198,15 @@ pub async fn delete_file(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     // Get file path before deleting from DB
-    let file = database::get_file_by_id(pool, &file_id).await?;
+    let file = database::get_file_by_id(&pool, &file_id).await?;
     
     if let Some(file_entry) = file {
         // Delete from filesystem
@@ -199,7 +217,7 @@ pub async fn delete_file(
         }
         
         // Delete from database
-        database::delete_file(pool, &file_id).await?;
+        database::delete_file(&pool, &file_id).await?;
     }
     
     Ok(())
@@ -211,13 +229,16 @@ pub async fn batch_delete(
     file_ids: Vec<String>,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     // Get file paths before deleting from DB
     for file_id in &file_ids {
-        let file = database::get_file_by_id(pool, file_id).await?;
+        let file = database::get_file_by_id(&pool, file_id).await?;
         if let Some(file_entry) = file {
             let path = PathBuf::from(&file_entry.path);
             if path.exists() {
@@ -227,7 +248,7 @@ pub async fn batch_delete(
     }
     
     // Delete from database
-    database::delete_files(pool, &file_ids).await
+    database::delete_files(&pool, &file_ids).await
 }
 
 /// Sync files from disk to database
@@ -263,11 +284,14 @@ pub async fn sync_files(
 pub async fn get_stats(
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
-    let total_files = database::get_file_count(pool).await?;
+    let total_files = database::get_file_count(&pool).await?;
     
     let favorites_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM files WHERE is_favorite = 1"
@@ -296,14 +320,17 @@ pub async fn get_thumbnail_path(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Option<String>, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     let thumbnail_config = app_state.thumbnail_config.as_ref()
         .ok_or("Thumbnail config not initialized")?;
     
     // Get file from database
-    let file = database::get_file_by_id(pool, &file_id).await?;
+    let file = database::get_file_by_id(&pool, &file_id).await?;
     
     if let Some(file_entry) = file {
         let file_path = PathBuf::from(&file_entry.path);
@@ -344,9 +371,12 @@ pub async fn health_check(
 pub async fn get_filter_options(
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<FilterOptions, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     // Get distinct models
     let models = sqlx::query_scalar::<_, String>(
@@ -406,12 +436,15 @@ pub async fn rename_file(
     new_name: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     // Get current file
-    let file = database::get_file_by_id(pool, &file_id).await?
+    let file = database::get_file_by_id(&pool, &file_id).await?
         .ok_or("File not found")?;
     
     let old_path = PathBuf::from(&file.path);
@@ -428,7 +461,7 @@ pub async fn rename_file(
         .bind(new_path.to_string_lossy().to_string())
         .bind(new_name)
         .bind(file_id)
-        .execute(pool)
+        .execute(&pool)
         .await
         .map_err(|e| format!("Failed to update database: {}", e))?;
     
@@ -442,9 +475,12 @@ pub async fn move_files(
     target_folder: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     let target_path = PathBuf::from(&target_folder);
     
@@ -454,7 +490,7 @@ pub async fn move_files(
     
     for file_id in file_ids {
         // Get file
-        let file = database::get_file_by_id(pool, &file_id).await?
+        let file = database::get_file_by_id(&pool, &file_id).await?
             .ok_or("File not found")?;
         
         let old_path = PathBuf::from(&file.path);
@@ -470,7 +506,7 @@ pub async fn move_files(
         sqlx::query("UPDATE files SET path = ? WHERE id = ?")
             .bind(new_path.to_string_lossy().to_string())
             .bind(file_id)
-            .execute(pool)
+            .execute(&pool)
             .await
             .map_err(|e| format!("Failed to update database: {}", e))?;
     }
@@ -486,9 +522,12 @@ pub async fn search_files(
     per_page: usize,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<PaginatedFiles, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     let offset = page * per_page;
     let search_pattern = format!("%{}%", query);
@@ -551,9 +590,12 @@ pub async fn get_files_filtered(
     per_page: usize,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<PaginatedFiles, String> {
-    let app_state = state.lock().unwrap();
-    let pool = app_state.db_pool.as_ref()
-        .ok_or("Database not initialized")?;
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone()
+    };
     
     let offset = page * per_page;
     
@@ -628,7 +670,7 @@ pub async fn get_files_filtered(
     let count_query = query.replace("SELECT DISTINCT f.id,", "SELECT COUNT(DISTINCT f.id) as count FROM (SELECT f.id FROM")
         .replace(" LIMIT ? OFFSET ?", "") + ")";
     
-    let total_count = database::get_file_count(pool).await? as usize; // Simplified for now
+    let total_count = database::get_file_count(&pool).await? as usize; // Simplified for now
     let has_more = (offset + file_entries.len()) < total_count;
     
     Ok(PaginatedFiles {
