@@ -1,5 +1,4 @@
 # SmartGallery - Standalone AI Media Gallery
-# Formerly: Smart Gallery for ComfyUI (now decoupled from ComfyUI)
 # Author: Biagio Maffettone © 2025 — MIT License (free to use and modify)
 #
 # Version: 2.1.0 - Standalone Version (November 2025)
@@ -2720,7 +2719,9 @@ def gallery_view(folder_key):
     conditions.extend(filter_conditions)
     params.extend(filter_params)
     
-    sort_by = 'name' if request.args.get('sort_by') == 'name' else 'mtime'
+    # Use request.args for both direct page loads and Alpine fetch calls
+    sort_by_arg = request.args.get('sort_by', 'date').lower()
+    sort_by = 'name' if sort_by_arg == 'name' else 'mtime'
     sort_order = 'asc' if request.args.get('sort_order', 'desc').lower() == 'asc' else 'desc'
     
     sort_direction = "ASC" if sort_order == 'asc' else "DESC"
@@ -3180,8 +3181,9 @@ def load_more():
     filter_conditions, filter_params = _build_filter_conditions(request.args)
     conditions.extend(filter_conditions)
     params.extend(filter_params)
-
-    sort_by = 'name' if request.args.get('sort_by') == 'name' else 'mtime'
+ 
+    sort_by_arg = request.args.get('sort_by', 'date').lower()
+    sort_by = 'name' if sort_by_arg == 'name' else 'mtime'
     sort_order = 'asc' if request.args.get('sort_order', 'desc').lower() == 'asc' else 'desc'
 
     sort_direction = "ASC" if sort_order == 'asc' else "DESC"

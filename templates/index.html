@@ -12,6 +12,7 @@
     <!-- Alpine.js Core + Plugins -->
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/intersect@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/focus@3.x.x/dist/cdn.min.js"></script> <!-- Required for x-trap focus management -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     
     <style>
@@ -22,9 +23,10 @@
             --surface-hover: #2a2a2a;
             --border-color: #333333;
             --text-color: #EAEAEA;
-            --text-muted: #888888;
+            --text-muted: #9E9E9E; /* WCAG AA compliant */
             --accent-yellow: #FFD60A;
             --danger-color: #FF4d4d;
+            --danger-hover: #ff1a1a;
             --success-color: #52c41a;
 
             /* Typography Scale - Standardized */
@@ -61,6 +63,115 @@
             --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
             --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        /* FIX: Add mandatory [x-cloak] rule to prevent FOUC */
+        [x-cloak] {
+            display: none !important;
+        }
+
+        /* FIX: Centralized Z-Index Hierarchy */
+        :root {
+            --z-notifications: 10000;
+            --z-sync-overlay: 9000;
+            --z-drag-drop: 8000;
+            --z-filter-panel: 8500;
+            --z-filter-backdrop: 8499;
+            --z-help-modal: 7000;
+            --z-upload-modal: 7000;
+            --z-summary-modal: 7000;
+            --z-lightbox: 4000;
+            --z-selection-bar: 2000;
+            --z-sidebar: 1000;
+            --z-lightbox-nav: 4001; /* Above lightbox itself */
+        }
+
+        /* ===================================
+           BUTTON SYSTEM (NEW)
+           =================================== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-1);
+            padding: var(--space-2) var(--space-3);
+            font-size: var(--text-sm);
+            font-weight: 600;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--surface-hover);
+            color: var(--text-color);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .btn:hover:not(:disabled) {
+            background: var(--surface-color);
+            border-color: var(--text-muted);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Variants */
+        .btn--primary {
+            background: var(--accent-yellow);
+            color: var(--bg-color);
+            border-color: var(--accent-yellow);
+        }
+        .btn--primary:hover:not(:disabled) {
+            background: #ffde3b;
+            border-color: #ffde3b;
+            color: var(--bg-color);
+        }
+
+        .btn--secondary {
+             background: transparent;
+             color: var(--text-muted);
+        }
+        .btn--secondary:hover:not(:disabled) {
+             background: var(--surface-hover);
+             color: var(--text-color);
+             border-color: var(--text-muted);
+        }
+        
+        .btn--destructive {
+            background: var(--danger-color);
+            color: white;
+            border-color: var(--danger-color);
+        }
+        .btn--destructive:hover:not(:disabled) {
+            background: var(--danger-hover);
+            border-color: var(--danger-hover);
+            color: white;
+        }
+
+        .btn--quiet {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+        .btn--quiet:hover:not(:disabled) {
+            background: rgba(255,255,255,0.2);
+            color: var(--text-color);
+        }
+
+        .btn-group {
+            display: flex;
+        }
+        .btn-group .btn {
+            border-radius: 0;
+        }
+        .btn-group .btn:first-child { border-radius: 4px 0 0 4px; }
+        .btn-group .btn:last-child { border-radius: 0 4px 4px 0; }
+        .btn-group .btn:not(:last-child) { border-right: none; }
+        .btn-group .btn.active { background: var(--surface-color); color: var(--accent-yellow); border-color: var(--accent-yellow); z-index: 1; }
+
         * { 
             box-sizing: border-box; 
             margin: 0;
@@ -107,7 +218,7 @@
             position: fixed; 
             top: var(--space-4); 
             right: var(--space-4); 
-            z-index: 10000; 
+            z-index: var(--z-notifications); 
             display: flex; 
             flex-direction: column; 
             gap: var(--space-2); 
@@ -173,8 +284,8 @@
             height: 100vh; 
             position: sticky; 
             top: 0; 
-            transition: min-width var(--transition-slow), transform var(--transition-slow); 
-            z-index: 1000; 
+            transition: width var(--transition-slow), transform var(--transition-slow); 
+            z-index: var(--z-sidebar); 
         }
         
         body.sidebar-expanded .sidebar { 
@@ -243,39 +354,11 @@
         
         .folder-sort-buttons { 
             display: flex; 
-            gap: var(--space-1); 
         }
-        
-        .folder-sort-buttons button { 
-            flex-grow: 1; 
-            background: var(--surface-hover); 
-            color: var(--text-muted); 
-            border: 1px solid var(--border-color); 
-            padding: var(--space-2); 
-            border-radius: 4px; 
-            cursor: pointer; 
-            font-weight: 600; 
-            font-size: var(--text-sm);
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            gap: 0.25rem; 
-            font-family: var(--font-monospace); 
-            transition: all var(--transition-fast);
+        .folder-sort-buttons .btn {
+            flex-grow: 1;
         }
-        
-        .folder-sort-buttons button:hover {
-            background: var(--surface-color);
-            border-color: var(--text-muted);
-        }
-        
-        .folder-sort-buttons button.active { 
-            background: var(--surface-color); 
-            color: var(--accent-yellow); 
-            border-color: var(--accent-yellow); 
-        }
-        
-        .folder-sort-buttons button svg { 
+        .folder-sort-buttons .btn svg { 
             width: 16px; 
             height: 16px; 
         }
@@ -322,8 +405,13 @@
         .folder-toggle.empty { visibility: hidden; }
         .folder-toggle svg { transition: transform 150ms ease-out; }
         li:not(.collapsed) .folder-toggle svg { transform: rotate(90deg); }
-        #create-folder-btn { width: 100%; background: var(--surface-hover); color: var(--text-color); border: 1px solid var(--border-color); padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 150ms ease-out; margin-top: 1.5rem; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
-        #create-folder-btn:hover { background: var(--surface-color); border-color: var(--accent-yellow); color: var(--accent-yellow); }
+        #create-folder-btn { 
+            width: 100%; 
+            margin-top: 1.5rem; 
+            flex-shrink: 0; 
+            border-style: dashed;
+        }
+        #create-folder-btn:hover { border-color: var(--accent-yellow); color: var(--accent-yellow); border-style: solid; }
         #create-folder-btn svg { width: 16px; height: 16px; }
         /* ===================================
            BREADCRUMBS & HEADER CONTROLS
@@ -376,37 +464,7 @@
             flex-shrink: 0; 
         }
         
-        .gallery-sort-controls .sort-btn { 
-            flex-shrink: 0; 
-            padding: var(--space-2) var(--space-3); 
-            font-size: var(--text-sm); 
-            background: transparent; 
-            color: var(--text-muted); 
-            font-weight: 600; 
-            text-decoration: none; 
-            border-radius: 4px; 
-            border: 1px solid var(--border-color); 
-            transition: all var(--transition-fast); 
-            display: flex; 
-            align-items: center; 
-            gap: var(--space-1); 
-            cursor: pointer;
-        }
-        
-        .gallery-sort-controls .sort-btn:hover { 
-            background: var(--surface-hover); 
-            color: var(--text-color); 
-            border-color: var(--text-muted); 
-        }
-        
-        .gallery-sort-controls .sort-btn.active {
-            background: var(--surface-color);
-            color: var(--accent-yellow);
-            border-color: var(--accent-yellow);
-            font-weight: 700;
-        }
-        
-        .gallery-sort-controls .sort-btn svg { 
+        .gallery-sort-controls .btn svg { 
             width: 16px; 
             height: 16px; 
         }
@@ -443,7 +501,7 @@
             height: 100vh; 
             background: var(--surface-color); 
             border-left: 1px solid var(--border-color); 
-            transform: translateX(100%); 
+            transform: translateX(100%);
             transition: transform var(--transition-base); 
             z-index: 2000; 
             display: flex; 
@@ -466,7 +524,7 @@
             opacity: 0; 
             pointer-events: none; 
             transition: opacity var(--transition-base); 
-            z-index: 1999; 
+            z-index: var(--z-filter-backdrop); 
         }
         
         #filter-backdrop.visible { 
@@ -912,44 +970,19 @@
             flex-shrink: 0; 
         }
         
-        .filter-panel-footer button { 
+        .filter-panel-footer .btn--primary { 
             flex: 1; 
-            padding: var(--space-2) var(--space-4); 
-            border-radius: 4px; 
-            font-weight: 600; 
-            font-size: var(--text-sm); 
-            border: 1px solid var(--accent-yellow); 
-            background: var(--accent-yellow); 
-            color: var(--bg-color); 
-            cursor: pointer; 
-            transition: all var(--transition-fast); 
         }
-        
-        .filter-panel-footer button:hover { 
-            background: transparent; 
-            color: var(--accent-yellow); 
+        .filter-panel-footer .btn--primary:hover {
+            background: #ffde3b;
+            border-color: #ffde3b;
         }
-        
-        .filter-panel-footer a { 
+        .filter-panel-footer .btn--secondary { 
             flex: 0.5; 
-            padding: var(--space-2) var(--space-4); 
-            border-radius: 4px; 
-            font-weight: 600; 
-            font-size: var(--text-sm); 
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            border: 1px solid var(--border-color); 
-            background: var(--surface-color); 
-            color: var(--text-muted); 
             text-decoration: none; 
-            transition: all var(--transition-fast); 
-        }
-        
-        .filter-panel-footer a:hover { 
-            background: var(--surface-hover); 
-            color: var(--text-color); 
-            border-color: var(--text-muted); 
         }
         
         .filter-actions-row { 
@@ -1111,6 +1144,24 @@
             z-index: 1 !important;
         }
         
+        /* FIX: Custom styling for Tom-Select dropdown options with file counts */
+        .ts-dropdown .tom-select-option-custom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        .ts-dropdown .option-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ts-dropdown .option-count {
+            font-size: var(--text-xs);
+            color: var(--text-muted);
+            font-family: var(--font-monospace);
+        }
+
         /* Tom-Select No Results */
         .ts-dropdown .no-results {
             color: var(--text-muted) !important;
@@ -1160,6 +1211,7 @@
         }
 
         .thumbnail-link { 
+            position: relative; /* Establish stacking context for overlays */
             cursor: pointer; 
         }
         
@@ -1177,11 +1229,17 @@
             width: 100%; 
             height: auto; 
             transition: transform var(--transition-slow); 
+            pointer-events: none; /* Prevent video from intercepting clicks */
         }
         
         .gallery-item:hover .thumbnail-wrapper img, 
         .gallery-item:hover .thumbnail-wrapper video { 
             transform: scale(1.05); 
+        }
+        
+        /* Prevent transform jitter on video elements during playback */
+        .gallery-item:hover .thumbnail-wrapper video {
+            transform: scale(1.02); /* Smaller scale to reduce playback interruption */
         }
         
         /* Active/click animation for gallery items */
@@ -1261,7 +1319,7 @@
             top: var(--space-2);
             left: var(--space-2);
             cursor: pointer;
-            z-index: 12;
+            z-index: 13; /* Above workflow badge (z-index: 11) and duration overlay (z-index: 10) */
         }
         
         .selection-checkbox {
@@ -1334,8 +1392,18 @@
             color: var(--text-color);
         }
         
+        .item-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
         .item-action-btn.favorited {
             color: var(--accent-yellow);
+        }
+        
+        .item-action-btn.favorited svg {
+            fill: var(--accent-yellow); /* Fill star icon when favorited */
         }
         
         .item-action-btn svg {
@@ -1559,13 +1627,9 @@
             100% { transform: translateX(100%); }
         }
         
-        #selection-bar { position: fixed; bottom: 0; transform: translateY(100%); transition: transform 200ms ease-out; left: 320px; right: 0; background: var(--surface-color); border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; z-index: 1001; box-sizing: border-box; backdrop-filter: none; flex-wrap: wrap; }
+        #selection-bar { position: fixed; bottom: 0; transform: translateY(100%); transition: transform 200ms ease-out; left: 320px; right: 0; background: var(--surface-color); border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; display: flex; align-items: center; gap: var(--space-2); z-index: var(--z-selection-bar); box-sizing: border-box; backdrop-filter: none; flex-wrap: wrap; }
         body.sidebar-expanded #selection-bar { left: 600px; }
         #selection-bar.visible { transform: translateY(0); }
-        #selection-bar button { padding: 0.5rem 1rem; font-size: 0.9rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--surface-hover); color: var(--text-color); cursor: pointer; transition: all 150ms ease-out; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
-        #selection-bar button:hover { background: var(--surface-color); border-color: var(--text-muted); }
-        #selection-bar button svg { width: 16px; height: 16px; }
-        #selection-bar .delete-btn { background: var(--danger-color); }
         #selection-counter { font-weight: 700; margin-right: auto; padding-left: 1rem; color: var(--accent-yellow); }
         #drag-drop-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 1002; display: none; opacity: 0; transition: opacity 150ms ease-out; backdrop-filter: none; }
         #drag-drop-overlay.visible { display: block; opacity: 1; }
@@ -1573,29 +1637,68 @@
         #drop-zone-panel.visible { display: flex; }
         #drop-zone-panel h3 { margin: 0; padding: 1rem 1.5rem; text-align: center; border-bottom: 1px solid var(--border-color); font-weight: 600; flex-shrink: 0;}
         #drop-zone-folders { overflow-y: auto; display: flex; flex-direction: column; padding: 0; min-height: 0; flex-grow: 1; }
-        #cancel-drop-btn { background: var(--danger-color); color: white; border: none; padding: 1rem; cursor: pointer; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; font-weight: 600; transition: background-color 150ms ease-out; flex-shrink: 0;}
+        #cancel-drop-btn { border: none; padding: 1rem; border-radius: 0 0 4px 4px; font-weight: 600; flex-shrink: 0; width: 100%;}
         #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 9999; display: flex; justify-content: center; align-items: center; transition: opacity 200ms ease-out; }
         .loader { border: 4px solid var(--surface-color); border-top: 4px solid var(--accent-yellow); border-radius: 50%; width: 48px; height: 48px; animation: spin 1.2s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        #lightbox-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(18,18,18,0.95); backdrop-filter: none; z-index: 2000; display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 200ms ease-out; }
+        /* FIX: Correct lightbox styling with z-index */
+        #lightbox-overlay { 
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+            background: rgba(18,18,18,0.95); 
+            z-index: var(--z-lightbox); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            opacity: 0; 
+            pointer-events: none; 
+            transition: opacity 200ms ease-out; 
+        }
         #lightbox-overlay.visible { opacity: 1; pointer-events: auto; }
-        .lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); color: white; border: 1px solid var(--border-color); border-radius: 50%; width: 60px; height: 60px; font-size: 1.8rem; cursor: pointer; transition: all 150ms ease-out; display: flex; justify-content: center; align-items: center; backdrop-filter: none; z-index: 2001; }
+        .lightbox-nav { 
+            position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); color: white; border: 1px solid var(--border-color); border-radius: 50%; width: 60px; height: 60px; font-size: 1.8rem; cursor: pointer; transition: all 150ms ease-out; display: flex; justify-content: center; align-items: center; 
+            z-index: var(--z-lightbox-nav); 
+        }
         .lightbox-nav:hover { background: rgba(0,0,0,0.8); }
         #lightbox-prev { left: 30px; }
         #lightbox-next { right: 30px; }
-        #lightbox-header { position: absolute; top: 0; left: 0; right: 0; z-index: 2002; padding: 1rem; background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%); backdrop-filter: none; display: flex; flex-direction: column; gap: 1rem; align-items: center; text-align: center; }
-        #lightbox-title { font-size: 1.1rem; font-weight: 600; color: white; word-break: break-word; hyphens: auto; max-width: 90vw; }
-        #lightbox-toolbar { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.75rem; }
-        #lightbox-toolbar button, #lightbox-toolbar a { background: rgba(255,255,255,0.1); border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.75rem; border-radius: 4px; font-size: 1.2rem; cursor: pointer; transition: all 150ms ease-out; text-decoration: none; display: flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; backdrop-filter: none; }
-        #lightbox-toolbar button:hover, #lightbox-toolbar a:hover { background: rgba(255,255,255,0.2); color: var(--text-color); }
-        #lightbox-toolbar button svg, #lightbox-toolbar a svg { width: 20px; height: 20px; }
-        #lightbox-content { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 6rem 1rem 2rem; }
-        #lightbox-media { display: flex; align-items: center; justify-content: center; max-width: 95vw; max-height: 90vh; }
+        
+        /* --- NEW: Lightbox Body & Content Area --- */
+        #lightbox-body { display: flex; width: 100%; height: 100%; }
+        #lightbox-content { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            width: 100%; 
+            height: 100%; 
+            padding: var(--space-4);
+            transition: margin-right var(--transition-slow);
+        }
+        #lightbox-overlay.sidebar-open #lightbox-content {
+            margin-right: 360px; /* Width of the sidebar */
+        }
+        #lightbox-media { display: flex; align-items: center; justify-content: center; max-width: 100%; max-height: 100%; }
         #lightbox-media img, #lightbox-media video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; box-shadow: var(--shadow-lg); cursor: grab; }
+
+        /* --- REFACTORED: Auto-Hiding Header --- */
+        #lightbox-header { position: absolute; top: 0; left: 0; right: 0; z-index: 4002; padding: var(--space-3) var(--space-4); background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%); backdrop-filter: none; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+        #lightbox-title-zoom { font-size: var(--text-base); font-weight: 600; color: white; }
+        #lightbox-toolbar { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+        #lightbox-toolbar .btn--quiet { min-width: 44px; height: 44px; }
+        #lightbox-toolbar .btn--quiet:hover { background: rgba(255,255,255,0.2); }
+
+        /* --- NEW: Metadata Sidebar --- */
+        #lightbox-sidebar { position: fixed; top: 0; right: 0; width: 360px; height: 100vh; background: var(--surface-color); border-left: 1px solid var(--border-color); z-index: 4003; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); transform: translateX(100%); transition: transform var(--transition-slow); }
+        #lightbox-sidebar.open { transform: translateX(0); }
+        .sidebar-header-content { padding: var(--space-4); border-bottom: 1px solid var(--border-color); }
+        .sidebar-header-content h3 { font-size: var(--text-xl); margin: 0 0 var(--space-1) 0; word-break: break-word; }
+        .sidebar-header-content p { font-size: var(--text-sm); color: var(--text-muted); margin: 0; }
+        .sidebar-scroll-content { flex-grow: 1; overflow-y: auto; padding: var(--space-4); }
+
+        /* --- REFACTORED: Sampler Panel (now inside sidebar) --- */
         #backToTopBtn { display: none; position: fixed; bottom: 110px; right: 30px; z-index: 99; font-size: 1.2rem; border: none; background: var(--accent-yellow); color: var(--bg-color); cursor: pointer; padding: 12px 16px; border-radius: 4px; transition: all 150ms ease-out; box-shadow: var(--shadow-md); }
         #load-more-container { text-align: center; padding: 3rem; }
-        #load-more-btn { background: var(--surface-hover); border: 1px solid var(--border-color); color: var(--text-color); padding: 1rem 2.5rem; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 600; transition: all 150ms ease-out; }
-        #load-more-btn:hover { border-color: var(--accent-yellow); color: var(--accent-yellow); }
         .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-muted); }
         #node-summary-overlay, #upload-overlay, #sync-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); backdrop-filter: none; display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 150ms ease-out; }
         #node-summary-overlay { z-index: 2100; }
@@ -1627,14 +1730,11 @@
         #drop-zone { border: 2px dashed var(--border-color); border-radius: 4px; padding: 2rem; text-align: center; color: var(--text-muted); transition: all 150ms ease-out; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; flex-grow: 1; }
         #drop-zone.dragover { border-color: var(--accent-yellow); background: var(--surface-hover); transform: none; }
         #drop-zone p { font-size: 1.1rem; font-weight: 500; margin: 0 0 1rem 0; }
-        #file-upload-btn { background: var(--accent-yellow); color: var(--bg-color); font-weight: 600; padding: 0.75rem 1.5rem; border-radius: 4px; border: none; cursor: pointer; }
         #file-list { list-style: none; padding: 0; margin-top: 1.5rem; max-height: 200px; overflow-y: auto; }
         #file-list li { background: var(--bg-color); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
         .file-size { color: var(--text-muted); font-size: 0.8rem; }
-        .upload-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 1rem; }
-        .upload-footer button { padding: 0.75rem 1.5rem; border-radius: 4px; border: none; font-weight: 600; cursor: pointer; }
-        #upload-cancel-btn { background: var(--surface-hover); color: var(--text-color); }
-        #upload-submit-btn { background: var(--accent-yellow); color: var(--bg-color); }
+        .upload-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: var(--space-2); }
+        .hidden { display: none; }
         #upload-progress-container { display: none; margin-top: 1rem; }
         #upload-progress-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; }
         #upload-progress-fill { width: 0%; height: 100%; background: var(--accent-yellow); transition: width 0.2s; }
@@ -1738,13 +1838,14 @@
                    class="folder-search-input"
                    id="folder-search-nav" 
                    placeholder="Search folders..."
-                   x-model.debounce.300ms="$store.gallery.folderSearchTerm">
-            <div class="folder-sort-buttons" id="folder-sort-nav">
-                <button @click="$store.gallery.folderSort = { key: 'name', dir: $store.gallery.folderSort.key === 'name' && $store.gallery.folderSort.dir === 'asc' ? 'desc' : 'asc' }; $store.gallery.saveSortState()" 
+                   x-model.debounce.300ms="$store.gallery.folderSearchTerm"
+                   aria-label="Search folders">
+            <div class="folder-sort-buttons btn-group" id="folder-sort-nav">
+                <button type="button" class="btn" @click="$store.gallery.folderSort = { key: 'name', dir: $store.gallery.folderSort.key === 'name' && $store.gallery.folderSort.dir === 'asc' ? 'desc' : 'asc' }; $store.gallery.saveSortState()" 
                         :class="{ 'active': $store.gallery.folderSort.key === 'name' }"
                         :title="'Sort by name ' + ($store.gallery.folderSort.key === 'name' ? ($store.gallery.folderSort.dir === 'asc' ? '↓' : '↑') : '')"
                         x-text="'A-Z' + ($store.gallery.folderSort.key === 'name' ? ($store.gallery.folderSort.dir === 'asc' ? ' ↑' : ' ↓') : '')">A-Z</button>
-                <button @click="$store.gallery.folderSort = { key: 'mtime', dir: $store.gallery.folderSort.key === 'mtime' && $store.gallery.folderSort.dir === 'desc' ? 'asc' : 'desc' }; $store.gallery.saveSortState()" 
+                <button type="button" class="btn" @click="$store.gallery.folderSort = { key: 'mtime', dir: $store.gallery.folderSort.key === 'mtime' && $store.gallery.folderSort.dir === 'desc' ? 'asc' : 'desc' }; $store.gallery.saveSortState()" 
                         :class="{ 'active': $store.gallery.folderSort.key === 'mtime' }"
                         :title="'Sort by date ' + ($store.gallery.folderSort.key === 'mtime' ? ($store.gallery.folderSort.dir === 'asc' ? '↓' : '↑') : '')">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
@@ -1820,12 +1921,12 @@
                 </template>
             </ul>
         </div>
-        <button id="create-folder-btn" @click="createFolder()">
+        <button id="create-folder-btn" class="btn btn--secondary" @click="createFolder()">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Create New Folder
         </button>
     </aside>
-    <div class="main-content">
+    <div class="main-content" x-ref="mainContent">
         <header class="breadcrumbs">
             <div class="breadcrumb-links">
                 {% for crumb in breadcrumbs %}
@@ -1833,31 +1934,26 @@
                     {% if not loop.last %}<span>/</span>{% endif %}
                 {% endfor %}
             </div>
-            <div class="gallery-sort-controls">
-                {% set current_sort_by = request.args.get('sort_by', 'date') %}
-                {% set current_sort_order = request.args.get('sort_order', 'desc') %}
-                {% set date_is_active = current_sort_by == 'date' %}
-                {% set date_next_order = 'asc' if date_is_active and current_sort_order == 'desc' else 'desc' %}
-                {% set date_query_params = dict(request.args.to_dict(flat=False), sort_by='date', sort_order=date_next_order) %}
-                <a href="{{ url_for('gallery_view', folder_key=current_folder_key, **date_query_params) }}" class="sort-btn {{ 'active' if date_is_active else '' }}" title="Sort by Date">
-                    Sort by Date {% if date_is_active %}<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; transform: rotate({{ '0' if current_sort_order == 'asc' else '180' }}deg);"><path d="M12 19V5M5 12l7-7 7 7"/></svg>{% endif %}
-                </a>
-                {% set name_is_active = current_sort_by == 'name' %}
-                {% set name_next_order = 'desc' if name_is_active and current_sort_order == 'asc' else 'asc' %}
-                {% set name_query_params = dict(request.args.to_dict(flat=False), sort_by='name', sort_order=name_next_order) %}
-                <a href="{{ url_for('gallery_view', folder_key=current_folder_key, **name_query_params) }}" class="sort-btn {{ 'active' if name_is_active else '' }}" title="Sort by Name">
-                    Sort by Name {% if name_is_active %}<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; transform: rotate({{ '0' if current_sort_order == 'asc' else '180' }}deg);"><path d="M12 19V5M5 12l7-7 7 7"/></svg>{% endif %}
-                </a>
-                <button type="button" class="sort-btn" @click="isFilterPanelOpen = true" :class="{ 'active': isFilterPanelOpen || activeFilterCount > 0 }">
+            <div class="gallery-sort-controls btn-group">
+                <!-- FIX: Convert sorting to client-side Alpine handlers -->
+                <button @click="setSort('date')" class="btn" :class="{ 'active': sortBy === 'date' }" title="Sort by Date">
+                    Sort by Date
+                    <svg x-show="sortBy === 'date'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;" :style="`transform: rotate(${sortOrder === 'asc' ? '0' : '180'}deg);`"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                </button>
+                <button @click="setSort('name')" class="btn" :class="{ 'active': sortBy === 'name' }" title="Sort by Name">
+                    Sort by Name
+                    <svg x-show="sortBy === 'name'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;" :style="`transform: rotate(${sortOrder === 'asc' ? '0' : '180'}deg);`"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                </button>
+                <button type="button" class="btn" @click="isFilterPanelOpen = true" :class="{ 'active': isFilterPanelOpen || activeFilterCount > 0 }">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     <span>Filters</span>
                 </button>
-                <button type="button" class="sort-btn" @click="isUploadOpen = true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Upload</button>
-                <button type="button" class="sort-btn" @click="startSyncProcess(true)">
+                <button type="button" class="btn" @click="isUploadOpen = true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Upload</button>
+                <button type="button" class="btn" @click="startSyncProcess(true)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                     Refresh
                 </button>
-                <button type="button" class="sort-btn" @click="isHelpOpen = true" title="Keyboard Shortcuts">
+                <button type="button" class="btn" @click="isHelpOpen = true" title="Keyboard Shortcuts">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                     Help
                 </button>
@@ -1877,8 +1973,8 @@
         </header>
         
         <!-- Filter Panel (Slide-out) -->
-        <div id="filter-backdrop" x-show="isFilterPanelOpen" @click="isFilterPanelOpen = false" x-transition:enter="transition ease-out duration-400" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-400" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"></div>
-        <div id="filter-panel" :class="{ 'open': isFilterPanelOpen }">
+        <div id="filter-backdrop" x-show="isFilterPanelOpen" @click="isFilterPanelOpen = false" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" x-cloak></div>
+        <div id="filter-panel" :class="{ 'open': isFilterPanelOpen }" x-trap.inert="isFilterPanelOpen" x-cloak>
             <div class="filter-panel-header">
                 <h2>
                     <span>Filters & Options</span>
@@ -1953,8 +2049,8 @@
                 </form>
             </div>
             <div class="filter-panel-footer">
-                <button type="submit" form="filter-form">Apply Filters</button>
-                <a href="{{ url_for('gallery_view', folder_key=current_folder_key) }}">Reset</a>
+                <button type="submit" form="filter-form" class="btn btn--primary">Apply Filters</button>
+                <a href="{{ url_for('gallery_view', folder_key=current_folder_key) }}" class="btn btn--secondary">Reset</a>
             </div>
         </div>
     <div id="gallery-anchor" x-ref="galleryAnchor"></div>
@@ -1966,15 +2062,11 @@
                      :data-file-type="file.type"
                      :class="{ 'selected': selectedFiles.includes(file.id) }"
                      draggable="true"
-                     @dragstart="dragStart($event, file.id)">
+                     @dragstart="dragStart($event, file.id)"
+                     @click="handleCardClick($event, file.id)">
 
-                    <!-- NEW: Declarative Selection Overlay on Thumbnail -->
-                    <div class="selection-overlay" @click.prevent="toggleSelection($event, file.id)">
-                        <div class="selection-checkbox"></div>
-                    </div>
-
-                    <!-- Thumbnail Link (now the primary click target for lightbox) -->
-                    <div class="thumbnail-link" @click="openLightbox(file.id)">
+                    <!-- FIX: Event delegation target -->
+                    <div class="thumbnail-link" data-action="open-lightbox">
                         <div class="thumbnail-wrapper">
                             <!-- Media Content (This block is unchanged) -->
                             <template x-if="file.type === 'audio'">
@@ -1982,8 +2074,7 @@
                             </template>
                             
                             <template x-if="['image', 'animated_image'].includes(file.type)">
-                                <img class="lazy" 
-                                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
+                                <img class="lazy"
                                      :data-src="`/galleryout/thumbnail/${file.id}`"
                                      :alt="file.name"
                                      loading="lazy"
@@ -1991,11 +2082,15 @@
                                      x-intersect:enter="$el.src = $el.dataset.src">
                             </template>
                             
+                            <!-- FIX: Performance-optimized video loading -->
                             <template x-if="file.type === 'video'">
-                                <video autoplay muted loop playsinline class="lazy"
+                                <video muted playsinline class="lazy"
                                        :data-src="`/galleryout/file/${file.id}`"
-                                       poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
-                                       x-intersect:enter="$el.src = $el.dataset.src; $el.load();">
+                                       :poster="`/galleryout/thumbnail/${file.id}`"
+                                       x-intersect:enter="if (!$el.src) $el.src = $el.dataset.src"
+                                       @mouseenter="$el.play().catch(e => console.warn('Video play prevented:', e))"
+                                       @mouseleave="$el.pause(); $el.currentTime = 0;"
+                                       @error="console.error('Video failed to load:', $el.src)">
                                 </video>
                             </template>
                             
@@ -2008,10 +2103,10 @@
                                 <a :href="`/galleryout/workflow/${file.id}`"
                                    class="workflow-badge"
                                    :data-sampler-count="file.sampler_count || 0"
-                                   :title="file.sampler_names ? `Samplers: ${file.sampler_names}` : (file.sampler_count > 1 ? `This workflow uses ${file.sampler_count} sampler configurations` : 'View workflow JSON')"
+                                   :title="file.sampler_names ? `Samplers: ${file.sampler_names}` : (file.sampler_count > 1 ? `This workflow uses ${file.sampler_count} sampler configurations` : 'Download Workflow (JSON)')"
                                    @click.stop>
-                                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
-                                   <span x-text="file.has_workflow ? 'Workflow' : ''"></span>
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><path d="M2 9.5c-1.1 0-2 0.9-2 2v8c0 1.1 0.9 2 2 2h10c1.1 0 2-0.9 2-2v-8c0-1.1-0.9-2-2-2h-3"/><path d="M14 2.5c1.1 0 2 0.9 2 2v8c0 1.1-0.9 2-2 2h-10c-1.1 0-2-0.9-2-2v-8c0-1.1 0.9-2 2-2h3"/><path d="M8 2.5v19"/><path d="M14 12.5h8"/></svg>
+                                   <span x-text="file.sampler_count > 1 ? file.sampler_count : 'Workflow'"></span>
                                 </a>
                             </template>
                             
@@ -2020,6 +2115,11 @@
                                 <span class="duration-overlay" x-text="file.duration"></span>
                             </template>
                         </div>
+                    </div>
+
+                    <!-- FIX: Event delegation target, moved to be a sibling of thumbnail-link -->
+                    <div class="selection-overlay" data-action="toggle-select">
+                        <div class="selection-checkbox"></div>
                     </div>
                     
                     <!-- NEW: Refactored Item Info section -->
@@ -2055,18 +2155,31 @@
                         
                         <!-- NEW: Action Bar with Kebab Menu -->
                         <div class="item-actions-container">
-                            <button class="item-action-btn" :class="{ 'favorited': file.is_favorite }" @click.stop="toggleFavorite(file.id)" title="Favorite" aria-label="Favorite">
+                            <button class="item-action-btn" 
+                                    :class="{ 'favorited': file.is_favorite }" 
+                                    :disabled="operationsInProgress.has(`favorite_${file.id}`)"
+                                    @click.stop="toggleFavorite(file.id)" 
+                                    title="Favorite" 
+                                    aria-label="Favorite">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                             </button>
                             <template x-if="file.has_workflow">
-                                <button class="item-action-btn" @click.stop="showNodeSummary(file.id)" title="Node Summary" aria-label="Node Summary">
+                                <button class="item-action-btn" 
+                                        :disabled="operationsInProgress.has(`summary_${file.id}`)"
+                                        @click.stop="showNodeSummary(file.id)" 
+                                        title="Node Summary" 
+                                        aria-label="Node Summary">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                                 </button>
                             </template>
                             <a :href="`/galleryout/download/${file.id}`" class="item-action-btn" title="Download" aria-label="Download">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                             </a>
-                            <button class="item-action-btn" @click.stop="deleteFile(file.id)" title="Delete" aria-label="Delete">
+                            <button class="item-action-btn" 
+                                    :disabled="operationsInProgress.has(`delete_${file.id}`)"
+                                    @click.stop="deleteFile(file.id)" 
+                                    title="Delete" 
+                                    aria-label="Delete">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                         </div>
@@ -2082,9 +2195,9 @@
                                     </div>            </template>
         </main>
         <div id="load-more-container" x-show="filesOnPage.length < totalFiles">
-            <button id="load-more-btn"
+            <button id="load-more-btn" class="btn"
                     @click="loadMore()" 
-                    :disabled="isLoadingMore" class="sort-btn" style="padding: 1rem 2.5rem;">
+                    :disabled="isLoadingMore" style="padding: 1rem 2.5rem;">
                 <span x-show="!isLoadingMore">
                     Load More 
                     <template x-if="totalFiles - filesOnPage.length <= {{ files_per_page }}">
@@ -2099,8 +2212,8 @@
         </div>
     </div>
     <button @click="scrollToTop()" id="backToTopBtn" title="Go to Top" aria-label="Go to Top" x-show="shouldShowBackToTop" style="display: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
-    <div id="drag-drop-overlay"></div>
-    <div id="drop-zone-panel">
+    <div id="drag-drop-overlay" :class="{ 'visible': isDropPanelVisible }"></div>
+    <div id="drop-zone-panel" :class="{ 'visible': isDropPanelVisible }" x-trap.inert="isDropPanelVisible">
         <h3>Move to Folder:</h3>
         <div class="folder-controls" style="padding: 0 1rem; margin-top: 1rem;">
             <input type="search" 
@@ -2108,11 +2221,11 @@
                    id="folder-search-move" 
                    placeholder="Search folders..."
                    x-model.debounce.300ms="$store.gallery.folderSearchTerm">
-            <div class="folder-sort-buttons" id="folder-sort-move">
-                <button @click="$store.gallery.folderSort = { key: 'name', dir: $store.gallery.folderSort.key === 'name' && $store.gallery.folderSort.dir === 'asc' ? 'desc' : 'asc' }; $store.gallery.saveSortState()" 
+            <div class="folder-sort-buttons btn-group" id="folder-sort-move">
+                <button type="button" class="btn" @click="$store.gallery.folderSort = { key: 'name', dir: $store.gallery.folderSort.key === 'name' && $store.gallery.folderSort.dir === 'asc' ? 'desc' : 'asc' }; $store.gallery.saveSortState()" 
                         :class="{ 'active': $store.gallery.folderSort.key === 'name' }"
                         x-text="'A-Z' + ($store.gallery.folderSort.key === 'name' ? ($store.gallery.folderSort.dir === 'asc' ? ' ↑' : ' ↓') : '')">A-Z</button>
-                <button @click="$store.gallery.folderSort = { key: 'mtime', dir: $store.gallery.folderSort.key === 'mtime' && $store.gallery.folderSort.dir === 'desc' ? 'asc' : 'desc' }; $store.gallery.saveSortState()" 
+                <button type="button" class="btn" @click="$store.gallery.folderSort = { key: 'mtime', dir: $store.gallery.folderSort.key === 'mtime' && $store.gallery.folderSort.dir === 'desc' ? 'asc' : 'desc' }; $store.gallery.saveSortState()" 
                         :class="{ 'active': $store.gallery.folderSort.key === 'mtime' }">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                         <span x-text="($store.gallery.folderSort.key === 'mtime' ? ($store.gallery.folderSort.dir === 'asc' ? ' ↑' : ' ↓') : '')"></span>
@@ -2195,147 +2308,164 @@
                 </ul>
             </div>
         </div>
-        <button @click="hideDropZone()" class="upload-footer button">Cancel</button>
+        <button @click="hideDropZone()" class="btn btn--destructive" id="cancel-drop-btn">Cancel</button>
     </div>
-    <div id="selection-bar" x-show="selectedFiles.length > 0" :class="{ 'visible': selectedFiles.length > 0 }">
+    <div id="selection-bar" x-ref="selectionBar" x-show="selectedFiles.length > 0" :class="{ 'visible': selectedFiles.length > 0 }" x-cloak>
         <span id="selection-counter" x-text="`${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''} selected`"></span>
-        <div class="actions-grid">
-            <button @click="moveSelected()"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Move</button>
-            <button @click="favoriteSelected(true)"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Add Fav</button>
-            <button @click="favoriteSelected(false)"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="m16 22 4-4"/></svg> Remove Fav</button>
-            <button @click="deleteSelected()" class="delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> Delete</button>
-            <button @click="selectAll()"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> All</button>
-            <button @click="selectedFiles = []"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> None</button>
+        <div class="actions-grid" style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
+            <button class="btn" @click="moveSelected()"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Move</button>
+            <button class="btn" @click="favoriteSelected(true)"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Add Fav</button>
+            <button class="btn" @click="favoriteSelected(false)"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="m16 22 4-4"/></svg> Remove Fav</button>
+            <button class="btn btn--destructive" @click="deleteSelected()"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> Delete</button>
+            <button class="btn" @click="selectAll()"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> All</button>
+            <button class="btn" @click="selectedFiles = []"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> None</button>
         </div>
     </div>
-    <div id="lightbox-overlay" x-show="isLightboxOpen" @click.self="closeLightbox()" @keydown.arrow-left.window="navigateLightbox(-1)" @keydown.arrow-right.window="navigateLightbox(1)" @keydown.delete.window.prevent="deleteFromLightbox()" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-        <div id="lightbox-header">
-            <div id="lightbox-title" x-text="currentLightboxFile ? `${currentLightboxFile.name} (${Math.round(currentZoom * 100)}%)` : ''"></div>
-            <div id="lightbox-toolbar">
-                <button @click="zoomLightbox(-0.2)" title="Zoom Out" aria-label="Zoom Out"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
-                <button @click="zoomLightbox(0.2)" title="Zoom In" aria-label="Zoom In"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
-                <a :href="currentLightboxFile ? `/galleryout/download/${currentLightboxFile.id}` : '#'" title="Download File" aria-label="Download File"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>
-                <button @click="renameFileFromLightbox()" title="Rename File" aria-label="Rename File"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
-                <button x-show="currentLightboxFile && currentLightboxFile.has_workflow" @click="showNodeSummary(currentLightboxFile.id)" title="Node Summary" aria-label="Node Summary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg></button>
-                <a x-show="currentLightboxFile && currentLightboxFile.has_workflow" :href="currentLightboxFile ? `/galleryout/workflow/${currentLightboxFile.id}` : '#'" class="workflow-btn" title="Download Workflow" aria-label="Download Workflow"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg></a>
-                <button @click="deleteFromLightbox()" title="Delete File" aria-label="Delete File"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
-                <a :href="currentLightboxFile ? `/galleryout/file/${currentLightboxFile.id}` : '#'" target="_blank" title="Open in New Tab" aria-label="Open in New Tab"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>
-                <button @click="closeLightbox()" title="Close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    <!-- FIX: Replaced x-show and broken x-transition with robust :class binding -->
+    <div id="lightbox-overlay" 
+         :class="{ 'visible': isLightboxOpen, 'sidebar-open': isMetadataSidebarOpen }" 
+         @click.self="closeLightbox()" 
+         @keydown.arrow-left.window="if(isLightboxOpen) navigateLightbox(-1)" 
+         @keydown.arrow-right.window="if(isLightboxOpen) navigateLightbox(1)" 
+         @keydown.delete.window.prevent="if(isLightboxOpen) deleteFromLightbox()" 
+         @mousemove="showLightboxControls()"
+         x-trap.inert="isLightboxOpen" 
+         x-cloak>
+
+        <!-- Auto-hiding Header -->
+        <div id="lightbox-header" x-show="isLightboxControlsVisible" x-transition.opacity.duration.300ms>
+            <div id="lightbox-title-zoom" x-text="currentLightboxFile ? `Zoom: ${Math.round(currentZoom * 100)}%` : ''"></div>
+            <div id="lightbox-toolbar" class="btn-group">
+                <button class="btn btn--quiet" @click="zoomLightbox(-0.2)" title="Zoom Out (-)" aria-label="Zoom Out"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+                <button class="btn btn--quiet" @click="zoomLightbox(0.2)" title="Zoom In (+)" aria-label="Zoom In"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+                <button class="btn btn--quiet" @click="resetZoom()" title="Reset Zoom (0)" aria-label="Reset Zoom">1:1</button>
+                <a :href="currentLightboxFile ? `/galleryout/download/${currentLightboxFile.id}` : '#'" class="btn btn--quiet" title="Download File" aria-label="Download File"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>
+                <button class="btn btn--quiet" @click="deleteFromLightbox()" title="Delete File" aria-label="Delete File"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+                <a :href="currentLightboxFile ? `/galleryout/file/${currentLightboxFile.id}` : '#'" class="btn btn--quiet" target="_blank" title="Open in New Tab" aria-label="Open in New Tab"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>
+                <button class="btn btn--quiet" @click="isMetadataSidebarOpen = !isMetadataSidebarOpen" :class="{ 'active': isMetadataSidebarOpen }" title="Show Details" aria-label="Show Details"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+                <button class="btn btn--quiet" @click="closeLightbox()" title="Close (Esc)" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
         </div>
-        <!-- Sampler Details Panel -->
-        <div class="lightbox-sampler-panel" 
-             x-show="currentLightboxFile && currentLightboxFile.has_workflow" 
-             style="display: none;"
-             x-transition>
-            
-            <button @click="toggleSamplerPanel()" class="sampler-toggle-btn" :class="{ 'expanded': samplerPanelExpanded }">
-                <span class="toggle-icon" style="transition: transform 0.3s;" :style="samplerPanelExpanded && { transform: 'rotate(180deg)' }">▼</span>
-                <span class="toggle-text" x-text="samplerPanelExpanded ? 'Hide Sampler Details' : 'Show Sampler Details'"></span>
-                <span class="sampler-badge" x-text="samplerCount" x-show="samplerCount > 0"></span>
-            </button>
 
-            <div class="sampler-content" :class="{ 'expanded': samplerPanelExpanded }">
-                <!-- Loading State -->
-                <div class="sampler-loader" x-show="samplerPanelLoading" x-cloak>Loading sampler data...</div>
-
-                <!-- Error State -->
-                <div class="sampler-error" x-show="samplerError" x-text="samplerError" x-cloak></div>
-
-                <!-- Content State -->
-                <div x-show="!samplerPanelLoading && !samplerError" x-cloak>
-                    <template x-for="(sampler, index) in samplerData" :key="index">
-                        <div class="sampler-item">
-                            <div class="sampler-header">Sampler <span x-text="index + 1"></span></div>
-                            <div class="sampler-grid">
-                                <!-- Sampler Fields: Rendered conditionally -->
-                                <template x-if="sampler.sampler_name">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">Sampler:</span>
-                                        <span class="sampler-field-value" x-text="sampler.sampler_name"></span>
-                                    </div>
-                                </template>
-                                <template x-if="sampler.scheduler">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">Scheduler:</span>
-                                        <span class="sampler-field-value" x-text="sampler.scheduler"></span>
-                                    </div>
-                                </template>
-                                <template x-if="sampler.steps != null">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">Steps:</span>
-                                        <span class="sampler-field-value" x-text="sampler.steps"></span>
-                                    </div>
-                                </template>
-                                <template x-if="sampler.cfg != null">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">CFG Scale:</span>
-                                        <span class="sampler-field-value" x-text="sampler.cfg"></span>
-                                    </div>
-                                </template>
-                                <template x-if="sampler.denoise != null">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">Denoise:</span>
-                                        <span class="sampler-field-value" x-text="sampler.denoise"></span>
-                                    </div>
-                                </template>
-                                <template x-if="sampler.seed != null">
-                                    <div class="sampler-field">
-                                        <span class="sampler-field-label">Seed:</span>
-                                        <span class="sampler-field-value" x-text="sampler.seed"></span>
-                                    </div>
-                                </template>
-                            </div>
-
-                            <!-- Prompts: Rendered conditionally -->
-                            <template x-if="sampler.positive_prompt">
-                                <div class="sampler-prompts">
-                                    <div class="sampler-prompt-label">Positive Prompt:</div>
-                                    <div class="sampler-prompt-text" x-text="sampler.positive_prompt"></div>
-                                </div>
-                            </template>
-                            <template x-if="sampler.negative_prompt">
-                                <div class="sampler-prompts">
-                                    <div class="sampler-prompt-label">Negative Prompt:</div>
-                                    <div class="sampler-prompt-text" x-text="sampler.negative_prompt"></div>
-                                </div>
-                            </template>
-                        </div>
+        <div id="lightbox-body">
+            <div id="lightbox-content">
+                <div id="lightbox-media" @wheel.prevent="zoomLightbox($event.deltaY < 0 ? 0.1 : -0.1)">
+                    <!-- Declarative media rendering based on file type -->
+                    <template x-if="currentLightboxFile?.type === 'audio'">
+                        <audio :src="`/galleryout/file/${currentLightboxFile.id}`"
+                            controls autoplay
+                            :style="`transform: scale(${currentZoom})`"></audio>
+                    </template>
+                    
+                    <template x-if="currentLightboxFile && ['image', 'animated_image'].includes(currentLightboxFile.type)">
+                        <img :src="`/galleryout/file/${currentLightboxFile.id}`"
+                            :alt="currentLightboxFile?.name || ''"
+                            :style="`transform: scale(${currentZoom})`"></img>
+                    </template>
+                    
+                    <template x-if="currentLightboxFile?.type === 'video'">
+                        <video :src="`/galleryout/file/${currentLightboxFile.id}`"
+                            controls autoplay loop
+                            :style="`transform: scale(${currentZoom})`"></video>
+                    </template>
+                    
+                    <template x-if="currentLightboxFile && !['audio', 'image', 'animated_image', 'video'].includes(currentLightboxFile.type)">
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:4rem;color:var(--text-muted);">📄</div>
                     </template>
                 </div>
             </div>
         </div>
-        <div id="lightbox-content">
-            <div id="lightbox-media" @wheel.prevent="zoomLightbox($event.deltaY < 0 ? 0.1 : -0.1)">
-                <!-- Declarative media rendering based on file type -->
-                <template x-if="currentLightboxFile?.type === 'audio'">
-                    <audio :src="`/galleryout/file/${currentLightboxFile.id}`"
-                           controls autoplay
-                           :style="`transform: scale(${currentZoom})`"></audio>
-                </template>
-                
-                <template x-if="currentLightboxFile && ['image', 'animated_image'].includes(currentLightboxFile.type)">
-                    <img :src="`/galleryout/file/${currentLightboxFile.id}`"
-                         :alt="currentLightboxFile?.name || ''"
-                         :style="`transform: scale(${currentZoom})`"></img>
-                </template>
-                
-                <template x-if="currentLightboxFile?.type === 'video'">
-                    <video :src="`/galleryout/file/${currentLightboxFile.id}`"
-                           controls autoplay loop
-                           :style="`transform: scale(${currentZoom})`"></video>
-                </template>
-                
-                <template x-if="currentLightboxFile && !['audio', 'image', 'animated_image', 'video'].includes(currentLightboxFile.type)">
-                    <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:4rem;color:var(--text-muted);">📄</div>
-                </template>
+
+        <!-- NEW Metadata Sidebar -->
+        <div id="lightbox-sidebar" :class="{ 'open': isMetadataSidebarOpen }">
+            <div class="sidebar-header-content">
+                <h3 x-text="currentLightboxFile?.name || 'Details'"></h3>
+                <p x-text="`${currentLightboxFile?.dimensions || ''} • ${currentLightboxFile?.mtime ? new Date(currentLightboxFile.mtime * 1000).toLocaleDateString() : ''}`"></p>
+            </div>
+            <div class="sidebar-scroll-content">
+            <div class="sidebar-scroll-content">
+                <!-- Sampler Details Panel (now inside sidebar) -->
+                <div class="lightbox-sampler-panel" x-show="currentLightboxFile && currentLightboxFile.has_workflow" style="position: static; width: auto; max-width: none; transform: none; background: none; border: none; backdrop-filter: none; border-radius: 0;">
+                    <button @click="toggleSamplerPanel()" class="sampler-toggle-btn" :class="{ 'expanded': samplerPanelExpanded }">
+                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-text" x-text="samplerPanelExpanded ? 'Hide Sampler Details' : 'Show Sampler Details'"></span>
+                        <span class="sampler-badge" x-text="samplerCount + ' Sampler' + (samplerCount > 1 ? 's' : '')" x-show="samplerCount > 0"></span>
+                    </button>
+
+                    <div class="sampler-content" :class="{ 'expanded': samplerPanelExpanded }" x-collapse>
+                        <div class="sampler-loader" x-show="samplerPanelLoading" x-cloak>Loading...</div>
+                        <div class="sampler-error" x-show="samplerError" x-text="samplerError" x-cloak></div>
+                        <div x-show="!samplerPanelLoading && !samplerError" x-cloak>
+                            <template x-for="(sampler, index) in samplerData" :key="index">
+                                <div class="sampler-item">
+                                    <div class="sampler-header">Sampler <span x-text="index + 1"></span></div>
+                                    <div class="sampler-grid">
+                                        <!-- Sampler Fields: Rendered conditionally -->
+                                        <template x-if="sampler.sampler_name">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">Sampler:</span>
+                                                <span class="sampler-field-value" x-text="sampler.sampler_name"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="sampler.scheduler">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">Scheduler:</span>
+                                                <span class="sampler-field-value" x-text="sampler.scheduler"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="sampler.steps != null">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">Steps:</span>
+                                                <span class="sampler-field-value" x-text="sampler.steps"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="sampler.cfg != null">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">CFG Scale:</span>
+                                                <span class="sampler-field-value" x-text="sampler.cfg"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="sampler.denoise != null">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">Denoise:</span>
+                                                <span class="sampler-field-value" x-text="sampler.denoise"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="sampler.seed != null">
+                                            <div class="sampler-field">
+                                                <span class="sampler-field-label">Seed:</span>
+                                                <span class="sampler-field-value" x-text="sampler.seed"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Prompts: Rendered conditionally -->
+                                    <template x-if="sampler.positive_prompt">
+                                        <div class="sampler-prompts">
+                                            <div class="sampler-prompt-label">Positive Prompt:</div>
+                                            <div class="sampler-prompt-text" x-text="sampler.positive_prompt"></div>
+                                        </div>
+                                    </template>
+                                    <template x-if="sampler.negative_prompt">
+                                        <div class="sampler-prompts">
+                                            <div class="sampler-prompt-label">Negative Prompt:</div>
+                                            <div class="sampler-prompt-text" x-text="sampler.negative_prompt"></div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <!-- Other metadata could go here in the future -->
             </div>
         </div>
+
         <button @click="navigateLightbox(-1)" class="lightbox-nav" style="left: 30px;">‹</button>
         <button @click="navigateLightbox(1)" class="lightbox-nav" style="right: 30px;">›</button>
     </div>
-    <div id="node-summary-overlay" x-show="isSummaryOpen" @click.self="isSummaryOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-        <div class="node-summary-panel" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+    <div id="node-summary-overlay" x-show="isSummaryOpen" @click.self="isSummaryOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" x-trap.inert="isSummaryOpen" x-cloak>
+        <div class="node-summary-panel" x-show="isSummaryOpen" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
             <div class="node-summary-header">
                 <h2>📝 Node Summary</h2>
                 <button class="close-btn" @click="isSummaryOpen = false">×</button>
@@ -2375,8 +2505,8 @@
             </div>
         </div>
     </div>
-    <div id="upload-overlay" x-show="isUploadOpen" @click.self="isUploadOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-        <div id="upload-panel" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+    <div id="upload-overlay" x-show="isUploadOpen" @click.self="isUploadOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" x-trap.inert="isUploadOpen" x-cloak>
+        <div id="upload-panel" x-show="isUploadOpen" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
             <div class="upload-header">
                 <h2>Upload Files</h2>
                 <p id="upload-destination-text">Upload to: <strong x-text="$store.gallery.folders[$store.gallery.currentFolderKey].display_name"></strong></p>
@@ -2387,11 +2517,14 @@
                      @dragover.prevent="dragOver"
                      @dragleave="dragLeave"
                      @drop.prevent="dropFiles"
-                     :class="{ 'dragover': isDragOver }">
+                     :class="{ 'dragover': isDragOver }" @click="$refs.fileInput.click()">
                     <p x-text="isDragOver ? 'Drop files here...' : 'Drag & Drop files here'"></p>
-                    <button type="button" id="file-upload-btn" @click="$refs.fileInput.click()">Or select files...</button>
+                    <button type="button" class="btn btn--primary">Or select files...</button>
                     <input type="file"
                            id="upload-file-input"
+                           multiple
+                           x-ref="fileInput"
+                           @change="handleFiles($event.target.files)" class="hidden">
                            multiple
                            x-ref="fileInput"
                            @change="handleFiles($event.target.files)">
@@ -2407,16 +2540,15 @@
                 <div id="upload-progress-container" x-show="uploadProgress > 0"><div id="upload-progress-bar"><div id="upload-progress-fill" :style="`width: ${uploadProgress}%`"></div></div></div>
             </div>
             <div class="upload-footer">
-                <button type="button" @click="isUploadOpen = false">Cancel</button>
-                <button type="button" id="upload-submit-btn"
+                <button type="button" class="btn btn--secondary" @click="isUploadOpen = false">Cancel</button>
+                <button type="button" class="btn btn--primary"
                         :disabled="isUploading"
-                        :class="{ 'opacity-50': isUploading }"
                         @click="performUpload()"
                         x-text="isUploading ? 'Uploading...' : 'Upload'">Upload</button>
             </div>
         </div>
     </div>
-    <div id="sync-overlay" x-show="isSyncing">
+    <div id="sync-overlay" x-show="isSyncing" x-trap.inert="isSyncing" x-cloak>
         <div id="sync-panel">
             <h3 x-text="syncMessage || 'Scanning...'"></h3>
             <div id="sync-progress-bar">
@@ -2424,12 +2556,12 @@
             </div>
         </div>
     </div>
-    <div id="loader-overlay" x-show="isPageLoading" x-transition.opacity.duration.400ms>
+    <div id="loader-overlay" x-show="isPageLoading" x-transition.opacity.duration.400ms x-cloak>
         <div class="loader"></div>
     </div>
     
     <!-- Help Modal -->
-    <div id="help-overlay" x-show="isHelpOpen" @click.self="isHelpOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 2400;" x-cloak>
+    <div id="help-overlay" x-show="isHelpOpen" @click.self="isHelpOpen = false" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 2400;" x-trap.inert="isHelpOpen" x-cloak>
         <div style="background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: var(--shadow-lg); max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; pointer-events: all;" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" @click.stop>
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
                 <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">Keyboard Shortcuts</h2>
@@ -2499,7 +2631,21 @@
                         plugins: [],
                         placeholder: el.getAttribute('placeholder') || 'Select...',
                         allowEmptyOption: true,
-                        closeAfterSelect: !el.hasAttribute('multiple')
+                        closeAfterSelect: !el.hasAttribute('multiple'),
+                        // FIX: Implement custom rendering for options to display file counts
+                        render: {
+                            option: function(data, escape) {
+                                // Check if a count is available for this option
+                                if (data.count !== undefined) {
+                                    return `<div class="tom-select-option-custom">
+                                                <span class="option-text" title="${escape(data.text)}">${escape(data.text)}</span>
+                                                <span class="option-count">${data.count}</span>
+                                            </div>`;
+                                }
+                                // Fallback for options without a count
+                                return `<div>${escape(data.text)}</div>`;
+                            }
+                        }
                     };
                     
                     // Add plugins based on element attributes
@@ -2748,6 +2894,10 @@
                 isLightboxOpen: false,
                 isUploadOpen: false,
                 isSummaryOpen: false,
+                // NEW Lightbox UI State
+                isLightboxControlsVisible: true,
+                isMetadataSidebarOpen: false,
+                lightboxControlsTimeout: null,
                 isDropPanelVisible: false,
                 isHelpOpen: false,  // NEW: Help modal state
                 // Declarative summary state replaces summaryHtml
@@ -2779,6 +2929,9 @@
                 samplerError: '',
                 samplerCount: 0,
                 samplerData: [],
+                
+                // --- OPERATION STATE (Prevent double-clicks) ---
+                operationsInProgress: new Set(),
                 
                 // --- FILTER STATE ---
                 filters: {
@@ -2815,6 +2968,10 @@
                 isMobileView: false,
                 isMobileNavCollapsed: false,
                 
+                // --- SORTING STATE (Client-side) ---
+                sortBy: 'date',
+                sortOrder: 'desc',
+                
                 // ===================================
                 // LIFECYCLE HOOKS
                 // ===================================
@@ -2826,6 +2983,11 @@
                     
                     // Check initial mobile view state
                     this.checkMobileView();
+
+                    // Initialize sort state from URL on first load
+                    const urlParams = new URLSearchParams(window.location.search);
+                    this.sortBy = urlParams.get('sort_by') || 'date';
+                    this.sortOrder = urlParams.get('sort_order') || 'desc';
                     
                     // Hide loader - replaced with Alpine-driven state
                     this.isPageLoading = false;
@@ -2853,6 +3015,16 @@
                     this.shouldShowBackToTop = window.scrollY > 300;
                     
                     // Scroll handling is performed declaratively via @scroll.window on the <body>
+
+                    // Effect for dynamic selection bar padding
+                    this.$watch('selectedFiles.length', () => {
+                        this.$nextTick(() => {
+                            const barHeight = this.selectedFiles.length > 0 ? (this.$refs.selectionBar?.offsetHeight || 80) : 0;
+                            if (this.$refs.mainContent) {
+                                this.$refs.mainContent.style.paddingBottom = `${barHeight + 32}px`;
+                            }
+                        });
+                    });
                 },
                 
                 // ===================================
@@ -3181,14 +3353,30 @@
                  * @returns {Promise<void>}
                  */
                 async toggleFavorite(fileId) {
-                    const file = this.filesOnPage.find(f => f.id === fileId);
-                    if (!file) return;
+                    // Prevent double-clicks
+                    const opKey = `favorite_${fileId}`;
+                    if (this.operationsInProgress.has(opKey)) {
+                        console.log('Operation already in progress:', opKey);
+                        return;
+                    }
                     
+                    const file = this.filesOnPage.find(f => f.id === fileId);
+                    if (!file) {
+                        console.warn('File not found for favorite toggle:', fileId);
+                        return;
+                    }
+                    
+                    this.operationsInProgress.add(opKey);
                     const originalState = file.is_favorite;
                     file.is_favorite = !file.is_favorite; // Optimistic update
                     
                     try {
                         const response = await fetch(`/galleryout/toggle_favorite/${fileId}`, { method: 'POST' });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
                         
                         if (data.status === 'success') {
@@ -3201,8 +3389,11 @@
                             this.$store.notifications.add('Failed to update favorite.', 'error');
                         }
                     } catch (error) {
+                        console.error('Toggle favorite error:', error);
                         file.is_favorite = originalState;
                         this.$store.notifications.add('Network error updating favorite.', 'error');
+                    } finally {
+                        this.operationsInProgress.delete(opKey);
                     }
                 },
                 
@@ -3216,8 +3407,22 @@
                 async deleteFile(fileId) {
                     if (!confirm('🗑️ Delete this file? This cannot be undone.')) return;
                     
+                    // Prevent double-clicks
+                    const opKey = `delete_${fileId}`;
+                    if (this.operationsInProgress.has(opKey)) {
+                        console.log('Operation already in progress:', opKey);
+                        return;
+                    }
+                    
+                    this.operationsInProgress.add(opKey);
+                    
                     try {
                         const response = await fetch(`/galleryout/delete/${fileId}`, { method: 'POST' });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
                         
                         if (data.status === 'success') {
@@ -3228,7 +3433,10 @@
                             throw new Error(data.message || 'Deletion failed');
                         }
                     } catch (error) {
+                        console.error('Delete file error:', error);
                         this.$store.notifications.add(`Failed to delete: ${error.message}`, 'error');
+                    } finally {
+                        this.operationsInProgress.delete(opKey);
                     }
                 },
                 
@@ -3267,12 +3475,26 @@
                         this.$refs.samplerSelect,
                         this.$refs.schedulerSelect
                     ].forEach(el => {
-                        if (el && el._tomSelect) {
+                        // FIX: Add check for destroyed instance
+                        if (el && el._tomSelect && !el._tomSelect.isDestroyed) {
                             el._tomSelect.clear(true);
                         }
                     });
                     
                     // Apply filters (will show all files)
+                    this.applyFilters();
+                },
+
+                /**
+                 * FIX: New method to handle client-side sorting state.
+                 */
+                setSort(key) {
+                    if (this.sortBy === key) {
+                        this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortBy = key;
+                        this.sortOrder = key === 'date' ? 'desc' : 'asc';
+                    }
                     this.applyFilters();
                 },
                 
@@ -3289,9 +3511,9 @@
                         const params = new URLSearchParams();
                         
                         // Get current sort params
-                        const currentSort = new URLSearchParams(window.location.search);
-                        params.set('sort_by', currentSort.get('sort_by') || 'date');
-                        params.set('sort_order', currentSort.get('sort_order') || 'desc');
+                        // FIX: Use Alpine state for sorting
+                        params.set('sort_by', this.sortBy);
+                        params.set('sort_order', this.sortOrder);
                         
                         // Add filter values
                         if (this.filters.search) params.set('search', this.filters.search);
@@ -3358,6 +3580,31 @@
                 // ===================================
                 // SELECTION OPERATIONS
                 // ===================================
+                /**
+                 * FIX: New method for unified card click handling via event delegation.
+                 */
+                handleCardClick(event, fileId) {
+                    // Find the closest ancestor with a data-action attribute
+                    const actionTarget = event.target.closest('[data-action]');
+                    
+                    // If no action target is found, default to opening the lightbox.
+                    const action = actionTarget ? actionTarget.dataset.action : 'open-lightbox';
+
+                    // Stop propagation to prevent unintended side effects
+                    event.stopPropagation();
+
+                    switch (action) {
+                        case 'toggle-select':
+                            this.toggleSelection(event, fileId);
+                            break;
+                        case 'open-lightbox':
+                            this.openLightbox(fileId);
+                            break;
+                        // Clicks on action buttons inside the card have their own @click.stop
+                        // and will not bubble up to this handler.
+                    }
+                },
+
                 toggleSelection(event, fileId) {
                     if (event.shiftKey && this.lastSelectedItem) {
                         const lastIndex = this.filesOnPage.findIndex(f => f.id === this.lastSelectedItem);
@@ -3535,44 +3782,105 @@
                 // ===================================
                 // LIGHTBOX OPERATIONS
                 // ===================================
+                /**
+                 * FIX: Hardened lightbox opening logic to prevent race conditions.
+                 */
                 openLightbox(fileId) {
-                    this.currentLightboxIndex = this.filesOnPage.findIndex(f => f.id === fileId);
-                    if (this.currentLightboxIndex === -1) return;
-                    
-                    this.currentZoom = 1;
-                    this.isLightboxOpen = true;
-                    this.showItemAtIndex(this.currentLightboxIndex);
-                },
-                
-                closeLightbox() {
-                    this.isLightboxOpen = false;
-                    this.currentLightboxFile = null;
-                    this.currentLightboxIndex = -1;
-                    this.currentZoom = 1;
-                },
-                
-                showItemAtIndex(index) {
-                    const file = this.filesOnPage[index];
-                    if (!file) return;
-                    
-                    this.currentLightboxFile = file;
-                    this.updateLightboxTitle();
-                    
-                    // Load sampler data if file has workflow
-                    if (file.has_workflow) {
-                        this.loadAndDisplaySamplers(file.id);
+                    try {
+                        // 1. Validate inputs and state to prevent re-entry
+                        if (!fileId || this.isLightboxOpen) {
+                            return;
+                        }
+                        if (!this.filesOnPage || this.filesOnPage.length === 0) {
+                            this.$store.notifications.add('Files are still loading.', 'info');
+                            return;
+                        }
+                        
+                        // 2. Find the file and its index
+                        const fileIndex = this.filesOnPage.findIndex(f => f.id === fileId);
+                        const file = this.filesOnPage[fileIndex];
+
+                        if (fileIndex === -1 || !file) {
+                            this.$store.notifications.add('File not found in the current view.', 'error');
+                            this.isLightboxOpen = false; // Ensure it stays closed
+                            return;
+                        }
+                        
+                        // 3. Set all state atomically before showing
+                        this.currentLightboxIndex = fileIndex;
+                        this.currentLightboxFile = file;
+                        this.resetZoom(); // Use helper method
+                        this.isMetadataSidebarOpen = false; // Close sidebar by default
+                        
+                        // 4. Show lightbox overlay
+                        this.isLightboxOpen = true;
+
+                        // 5. Show controls and start auto-hide timer
+                        this.showLightboxControls();
+
+                        // 6. Reset sampler panel state
+                        this.samplerPanelExpanded = false;
+                        this.samplerData = [];
+                        this.samplerCount = 0;
+                        this.samplerError = '';
+                        this.samplerPanelLoading = false;
+
+                        // 7. Load associated data after showing
+                        if (file.has_workflow) {
+                            this.loadAndDisplaySamplers(file.id);
+                        }
+                    } catch (error) {
+                        console.error('Error opening lightbox:', error);
+                        this.$store.notifications.add('Failed to open lightbox', 'error');
+                        this.isLightboxOpen = false;
                     }
                 },
                 
+                closeLightbox() {
+                    // Full reset of lightbox state
+                    this.isLightboxOpen = false;
+                    this.currentLightboxFile = null;
+                    this.currentLightboxIndex = -1;
+                    this.isMetadataSidebarOpen = false;
+                    if (this.lightboxControlsTimeout) clearTimeout(this.lightboxControlsTimeout);
+                    this.samplerPanelExpanded = false; // Also close sampler panel
+                },
+                
                 navigateLightbox(direction) {
-                    if (this.filesOnPage.length === 0) return;
+                    if (!this.isLightboxOpen || this.filesOnPage.length === 0) return;
+
+                    // Reset UI states for the new image
+                    this.resetZoom();
+                    this.showLightboxControls();
+
                     this.currentLightboxIndex = (this.currentLightboxIndex + direction + this.filesOnPage.length) % this.filesOnPage.length;
-                    this.showItemAtIndex(this.currentLightboxIndex);
+                    const newFile = this.filesOnPage[this.currentLightboxIndex];
+                    this.currentLightboxFile = newFile;
+                    if (newFile.has_workflow) {
+                        this.loadAndDisplaySamplers(newFile.id);
+                    }
                 },
                 
                 zoomLightbox(amount) {
                     this.currentZoom = Math.max(0.5, Math.min(3, this.currentZoom + amount));
                     // Alpine will handle the zoom styling via :style binding
+                },
+                
+                resetZoom() {
+                    this.currentZoom = 1;
+                },
+
+                showLightboxControls() {
+                    // Clear any existing timeout to prevent hiding
+                    if (this.lightboxControlsTimeout) {
+                        clearTimeout(this.lightboxControlsTimeout);
+                    }
+                    // Make controls visible
+                    this.isLightboxControlsVisible = true;
+                    // Set a new timeout to hide them after a delay
+                    this.lightboxControlsTimeout = setTimeout(() => {
+                        this.isLightboxControlsVisible = false;
+                    }, 3000); // Hide after 3 seconds of inactivity
                 },
                 
                 updateLightboxTitle() {
@@ -3648,8 +3956,6 @@
                         if (data.status === 'success') {
                             this.$store.notifications.add('File renamed!', 'success');
                             this.currentLightboxFile.name = data.new_name;
-                            this.currentLightboxFile.id = data.new_id;
-                            this.updateLightboxTitle();
                             this.showItemAtIndex(this.currentLightboxIndex);
                         }
                     } catch (error) {
@@ -3688,12 +3994,25 @@
                 // MODAL OPERATIONS
                 // ===================================
                 async showNodeSummary(fileId) {
+                    // Prevent double-clicks
+                    const opKey = `summary_${fileId}`;
+                    if (this.operationsInProgress.has(opKey)) {
+                        console.log('Node summary already loading:', opKey);
+                        return;
+                    }
+                    
+                    this.operationsInProgress.add(opKey);
                     this.isSummaryOpen = true;
                     this.isSummaryLoading = true;
                     this.summaryData = [];
 
                     try {
                         const response = await fetch(`/galleryout/node_summary/${fileId}`);
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
 
                         if (data.status === 'success' && Array.isArray(data.summary) && data.summary.length > 0) {
@@ -3705,12 +4024,15 @@
                             }));
                         } else {
                             this.summaryData = [];
+                            this.$store.notifications.add('No node summary available', 'warning');
                         }
                     } catch (error) {
                         console.error('[showNodeSummary] Failed to load node summary:', error);
                         this.summaryData = [];
+                        this.$store.notifications.add('Failed to load node summary', 'error');
                     } finally {
                         this.isSummaryLoading = false;
+                        this.operationsInProgress.delete(opKey);
                     }
                 },
                 
@@ -3753,9 +4075,11 @@
                                 selectInstance.clearOptions();
                                 selectInstance.addOption({ value: '', text: emptyText });
 
+                                // FIX: Pass raw data to TomSelect so render.option can use it
                                 const formattedOptions = options.map(opt => ({
                                     value: opt.value,
-                                    text: `${opt.value} (${opt.count})`
+                                    text: opt.value, // `text` is used for searching and selected item display
+                                    count: opt.count // `count` is now available for the render function
                                 }));
                                 selectInstance.addOptions(formattedOptions);
 
@@ -3907,26 +4231,29 @@
                     };
                 },
                 
+                // FIX: Robust deep-linking with retry mechanism
                 handleDeepLinking() {
-                    setTimeout(() => {
-                        const hash = window.location.hash;
-                        if (hash && hash.startsWith('#file-')) {
-                            const fileId = hash.substring(6);
-                            const file = this.filesOnPage.find(f => f.id === fileId);
-                            
-                            if (file) {
-                                this.openLightbox(null, fileId);
-                            } else {
-                                // File not on current page, redirect to its location
-                                fetch(`/galleryout/file_location/${fileId}?${new URLSearchParams(window.location.search)}`)
-                                    .then(r => r.json())
-                                    .then(d => {
-                                        if (d.redirect_url) window.location.href = d.redirect_url;
-                                    })
-                                    .catch(() => this.$store.notifications.add('File not found.', 'error'));
-                            }
+                    const params = new URLSearchParams(window.location.search);
+                    const fileId = params.get('file_id');
+                    if (!fileId) return;
+
+                    let attempts = 0;
+                    const maxAttempts = 30; // 3 seconds timeout
+
+                    const tryOpen = () => {
+                        const targetFile = this.filesOnPage.find(f => f.id === fileId);
+                        if (targetFile) {
+                            this.openLightbox(fileId);
+                            const el = document.querySelector(`[data-file-id="${fileId}"]`);
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } else if (attempts < maxAttempts) {
+                            attempts++;
+                            setTimeout(tryOpen, 100);
+                        } else {
+                            this.$store.notifications.add('Deep-linked file not found.', 'error');
                         }
-                    }, 200);
+                    };
+                    tryOpen();
                 },
                 
                 // ===================================
