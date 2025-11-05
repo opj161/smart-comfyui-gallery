@@ -98,7 +98,7 @@ pub async fn get_files(
     )
     .bind(per_page as i64)
     .bind(offset as i64)
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to fetch files: {}", e))?;
     
@@ -320,14 +320,16 @@ pub async fn get_thumbnail_path(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Option<String>, String> {
-    let pool = {
+    let (pool, thumbnail_config) = {
         let app_state = state.lock().unwrap();
-        app_state.db_pool.as_ref()
+        let pool = app_state.db_pool.as_ref()
             .ok_or("Database not initialized")?
-            .clone()
+            .clone();
+        let config = app_state.thumbnail_config.as_ref()
+            .ok_or("Thumbnail config not initialized")?
+            .clone();
+        (pool, config)
     };
-    let thumbnail_config = app_state.thumbnail_config.as_ref()
-        .ok_or("Thumbnail config not initialized")?;
     
     // Get file from database
     let file = database::get_file_by_id(&pool, &file_id).await?;
@@ -336,14 +338,14 @@ pub async fn get_thumbnail_path(
         let file_path = PathBuf::from(&file_entry.path);
         
         // Check if thumbnail exists
-        let thumb_path = crate::thumbnails::get_thumbnail_path(&file_path, thumbnail_config);
+        let thumb_path = crate::thumbnails::get_thumbnail_path(&file_path, &thumbnail_config);
         
         if let Some(path) = thumb_path {
             return Ok(Some(path.to_string_lossy().to_string()));
         }
         
         // Try to create thumbnail
-        match crate::thumbnails::get_or_create_thumbnail(&file_path, &file_entry.file_type, thumbnail_config) {
+        match crate::thumbnails::get_or_create_thumbnail(&file_path, &file_entry.file_type, &thumbnail_config) {
             Ok(path) => Ok(Some(path.to_string_lossy().to_string())),
             Err(_) => Ok(None),
         }

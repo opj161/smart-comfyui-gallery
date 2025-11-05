@@ -1,7 +1,7 @@
 // Workflow parser for ComfyUI metadata extraction
 // Ports the Python ComfyUIWorkflowParser with full dual-format support
 
-use serde_json::{Value, Map};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 

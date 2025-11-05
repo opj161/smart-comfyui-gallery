@@ -377,7 +377,7 @@ pub async fn full_sync(
     let total_files = files_to_process.len();
     
     // Delete removed files
-    for path in &to_delete {
+    for _path in &to_delete {
         // We'd need to get the file_id from the path first
         // For now, just note that we'd delete them
     }
