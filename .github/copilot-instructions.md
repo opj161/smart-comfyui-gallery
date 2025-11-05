@@ -1,254 +1,332 @@
-# SmartGallery - AI Coding Agent Instructions
+# SmartGallery - AI Agent Instructions
 
 ## Project Overview
 
-SmartGallery is a standalone Flask web application for browsing, organizing, and analyzing AI-generated media with ComfyUI workflow metadata extraction. It's a **single-file monolith** (`smartgallery.py` ~3400 lines) with an Alpine.js SPA frontend (`index.html` ~3700 lines).
+**SmartGallery** is a standalone desktop application (formerly a ComfyUI plugin) that provides a web-based gallery for browsing, organizing, and analyzing AI-generated media files. The core innovation is **universal workflow extraction** - it parses embedded ComfyUI workflow JSON from PNG, video, and other media files to display generation parameters (models, prompts, samplers, CFG, steps, seeds).
 
-**Key Architecture Pattern**: This is a **format-agnostic workflow parser** that reads ComfyUI workflows embedded in PNG/video metadata without requiring ComfyUI installation.
+**Architecture**: Flask backend + Alpine.js frontend wrapped in PyWebView for native desktop deployment via PyInstaller.
 
-## Critical Architectural Decisions
+**Key Technologies**:
+- Backend: Flask 3.0, SQLite with WAL mode, PIL/OpenCV for thumbnails, multiprocessing for parallel sync
+- Frontend: Alpine.js 3.x with Tom-Select dropdowns, pure CSS (no framework)
+- Desktop: PyWebView (EdgeHTML on Windows), Waitress WSGI server (production stability)
+- Build: PyInstaller with custom `.spec` file, Nuitka comments in `main.py` for alternative compiler
 
-### 1. Workflow Parser - The Core Innovation
+## Critical Architecture Patterns
 
-The `ComfyUIWorkflowParser` class (lines 169-650) is the project's intellectual property:
+### 1. Dual-Mode Application Structure
 
-- **Handles TWO workflow formats natively** (UI format with `nodes` array, API format with node_id dict)
-- **Graph-based traversal** using `_find_source_node()` - NOT breadth-first search
-- **Multi-sampler support** - extracts metadata for EACH sampler node independently
-- Avoids flawed conversion overhead (removed `convert_ui_workflow_to_api_format()` in v1.40.0)
+SmartGallery can run as:
+- **Desktop app**: `main.py` → PyWebView wrapper → launches Flask server in background thread
+- **Standalone server**: `python smartgallery.py --output-path /path --input-path /path`
 
-**When editing parser logic**:
+**Desktop mode critical patterns**:
 ```python
-# CORRECT: Format-aware node access
-if self.format == 'ui':
-    # Use self.links_map (link_id -> (source_node_id, slot_idx))
-    source_node = self._get_input_source_node(node, 'model')
-else:  # API format
-    # Use node['inputs'] directly
-    source_node = node.get('inputs', {}).get('model')
+# main.py - MUST include at top level to prevent infinite process spawning
+if __name__ == '__main__':
+    multiprocessing.freeze_support()  # CRITICAL for PyInstaller
 ```
 
-### 2. Database Schema Evolution Pattern
+**Thread lifecycle management** (v2.1.0 fixes):
+- Server runs in **NON-DAEMON thread** (allows proper cleanup)
+- Uses `threading.Event()` for coordinated shutdown
+- `atexit.register()` ensures cleanup on any termination
+- `waitress` WSGI server (not Flask dev server) for production stability
 
-Schema version in `DB_SCHEMA_VERSION = 22`. Migrations use **conditional ALTER TABLE** pattern:
+### 2. Configuration Hierarchy
 
+Config locations checked in order (see `main.py:load_config()`):
+1. `%LOCALAPPDATA%\SmartGallery\config.json` (Windows, preferred)
+2. `appdirs.user_data_dir("SmartGallery")/config.json` (cross-platform)
+3. `config.json` next to executable (frozen) or in CWD (development)
+
+**User data paths** (writable, outside bundled app):
+- Config: User data dir (above)
+- Database: `USER_DATA_PATH/smartgallery_cache/gallery_cache.sqlite`
+- Thumbnails: `USER_DATA_PATH/thumbnails_cache/`
+- Logs: `USER_DATA_PATH/smartgallery_logs/`
+
+**Do NOT write to `sys._MEIPASS`** (PyInstaller temp dir, read-only).
+
+### 3. Workflow Parser Architecture
+
+The `ComfyUIWorkflowParser` class (lines 251-773) handles **both UI and API workflow formats** natively:
+
+**Format detection**:
+- UI format: Has `nodes` array, uses `links` array and `widget_idx_map`
+- API format: Dict of `{node_id: node_data}`, inputs reference node IDs directly
+
+**Key design principle**: **Fail gracefully per-field**. If model extraction fails, still extract samplers, prompts, etc.
+
+**Multi-sampler support** (v1.39.0+):
+- One file can have multiple sampler nodes → multiple DB rows in `workflow_metadata` table
+- Each sampler gets `sampler_index` (0, 1, 2...)
+- Frontend shows "2 samplers" badge with hover tooltip listing all names
+- `files.sampler_names` stores comma-separated unique names for quick display
+
+**Node traversal pattern**:
 ```python
-# Check if column exists before adding (idempotent migrations)
-cursor.execute("PRAGMA table_info(files)")
-columns = {col[1] for col in cursor.fetchall()}
-if 'prompt_preview' not in columns:
-    cursor.execute("ALTER TABLE files ADD COLUMN prompt_preview TEXT")
+def _get_input_source_node(self, node, input_name):
+    """Backward trace: sampler → model loader → checkpoint"""
+    # Handles Primitive nodes, link chains, format differences
 ```
 
-**Critical indices** (v1.41.0 performance fix):
-- `idx_files_name`, `idx_files_mtime`, `idx_files_type`, `idx_files_favorite`, `idx_files_path`
-- These enable O(log n) queries instead of O(n) table scans
+**Supported node types** - comprehensive lists at top of file:
+- `SAMPLER_TYPES`: KSampler, KSamplerAdvanced, SamplerCustom, UltimateSDUpscale...
+- `MODEL_LOADER_TYPES`: CheckpointLoaderSimple, UNETLoader, DualCLIPLoader...
+- `PROMPT_NODE_TYPES`: CLIPTextEncode, CLIPTextEncodeSDXL...
+- `SCHEDULER_NODE_TYPES`: BasicScheduler, KarrasScheduler...
 
-### 3. Frontend State Management
+**Debug mode** (disabled in production):
+```python
+DEBUG_WORKFLOW_EXTRACTION = False  # Line 925
+# When True, saves workflow processing stages to output/workflow_debug/{filename}/
+```
 
-Alpine.js stores (`Alpine.store('gallery')`) manage:
-- **Folder tree state**: `folders`, `folderSort`, `folderSearchTerm`, `collapsedFolders`
-- **Persistent UI preferences**: Saved to `localStorage` via `saveSortState()`
-- **Reactive filtering**: `activeFilterPills` computed from form values
+### 4. Database Schema & Performance
 
-**Tom-Select Integration** (multi-select dropdowns):
+**Schema version**: Track in code comments (currently v1.50+, has `prompt_preview` and `sampler_names`)
+
+**Critical tables**:
+```sql
+files (id, path, name, type, mtime, has_workflow, is_favorite, 
+       prompt_preview TEXT,  -- First 150 chars of positive prompt
+       sampler_names TEXT)   -- Comma-separated unique sampler names
+
+workflow_metadata (id, file_id, sampler_index, model_name, sampler_name, 
+                   scheduler, cfg, steps, positive_prompt, negative_prompt, 
+                   width, height)
+-- UNIQUE INDEX on (file_id, sampler_index)
+```
+
+**Performance indices** (v1.41.0 - CRITICAL):
+```python
+# Files table - enable O(log n) queries
+idx_files_name, idx_files_mtime, idx_files_type, idx_files_favorite, idx_files_path
+
+# Workflow metadata - fast filtering
+idx_model_name, idx_sampler_name, idx_scheduler, idx_cfg, idx_steps, idx_width, idx_height
+```
+
+**Pagination pattern** (v1.41.0 fix):
+```python
+# ❌ OLD (memory bloat): Load ALL files, slice in Python
+# ✅ NEW (efficient): True SQL pagination
+SELECT * FROM files WHERE ... LIMIT ? OFFSET ?
+SELECT COUNT(*) FROM files WHERE ...  # Separate count query
+```
+
+**Multi-sampler filtering** (v1.39.0+):
+```python
+# Use EXISTS subquery to prevent duplicate file results
+WHERE EXISTS (
+    SELECT 1 FROM workflow_metadata wm 
+    WHERE wm.file_id = f.id AND wm.model_name = ?
+)
+```
+
+### 5. Memory Management (v2.1.0 Critical Fixes)
+
+**BoundedCache class** (lines 970-1067):
+```python
+# Replaces unbounded dicts that caused memory leaks
+_filter_options_cache = BoundedCache(max_size=50, ttl_seconds=300)
+request_timing_log = BoundedCache(max_size=500, ttl_seconds=600)
+```
+
+**Features**: Thread-safe, TTL expiration, LRU eviction, built-in statistics
+
+**PIL operations** - ALWAYS use context manager:
+```python
+with safe_image_operation(filepath) as img:
+    # Prevents file handle leaks in long-running apps
+    img.thumbnail((size, size))
+```
+
+**Multiprocessing sync** - passes `debug_dir` as parameter (not global) to workers
+
+### 6. Flask Route Patterns
+
+**Initialization guard**:
+```python
+@app.route('/galleryout/...')
+@require_initialization  # Ensures initialize_gallery() was called
+def endpoint():
+    conn = get_db()  # Uses Flask g object, auto-cleanup via teardown
+```
+
+**Database connection** (lines 1709-1754):
+- Stored in `g.db` (per-request)
+- WAL mode + performance PRAGMAs
+- Auto-closed via `teardown_appcontext`
+
+**SSE streaming** (real-time sync progress):
+```python
+@app.route('/galleryout/sync_folder')
+def sync_folder():
+    def generate():
+        for progress in sync_folder_on_demand(...):
+            yield f"data: {json.dumps(progress)}\n\n"
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+```
+
+### 7. Frontend Architecture (Alpine.js)
+
+**Single-component pattern** - one `x-data="gallery()"` manages all state (lines 2700-3900+)
+
+**Key reactive properties**:
 ```javascript
-// ALWAYS store references for programmatic clearing
-const tomSelectInstances = {};
-tomSelectInstances.model = new TomSelect('#model-select', { /* config */ });
-
-// Clear all instances when needed
-Object.values(tomSelectInstances).forEach(ts => ts.clear());
+files: [],              // Current page files
+selectedFiles: new Set(), // Selection state
+isLightboxOpen: false,  // Modal states
+currentLightboxIndex: 0,
+filters: { type: [], extension: [], ... }
 ```
 
-## Developer Workflows
+**Tom-Select integration** (custom directive):
+```javascript
+Alpine.directive('tom-select', ...)  // Line 2490+
+// Auto-syncs with x-model, handles multi-select plugins
+```
 
-### Running the Application
+**Global stores**:
+```javascript
+Alpine.store('gallery', { folders, currentFolderKey, expandedFolderKeys })
+Alpine.store('notifications', { list, add(), remove() })
+```
 
+**Deep-linking pattern** (v1.36+):
+```javascript
+// URL params: ?folder=subfolder&file_id=abc123&sort=date&order=desc
+// On load, parse params → set filters → scroll to file → open lightbox
+```
+
+**SSE event handling** (non-blocking sync):
+```javascript
+const eventSource = new EventSource('/galleryout/sync_folder');
+eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    // Update progress overlay, refresh on complete
+};
+```
+
+## Development Workflows
+
+### Testing Locally (Python)
 ```bash
-# Standalone mode (no ComfyUI required)
-python smartgallery.py --output-path "C:\path\to\media" --input-path "C:\path\to\workflows"
+# Development mode (Flask dev server)
+python smartgallery.py --output-path C:/AI/Output --input-path C:/AI/Input
 
-# With custom port
-python smartgallery.py --port 8080
-
-# Using config.json (preferred)
-cp config.json.example config.json
-# Edit config.json with your paths
-python smartgallery.py
+# Desktop mode
+python main.py  # Reads config.json from user data dir or CWD
 ```
 
-**First-time setup**: App auto-creates SQLite database and thumbnails on first sync.
+### Building Executable
+```bash
+# Prerequisites
+pip install -r requirements.txt  # Includes waitress>=3.0.2
+# Place ffprobe.exe in bin/ directory
+
+# Build
+pyinstaller smartgallery.spec  # Or: pyinstaller --clean smartgallery.spec
+
+# Output: dist/SmartGallery.exe (~50-80 MB with UPX)
+```
+
+**Spec file critical sections**:
+- `datas`: Templates, static folders, ffprobe binary
+- `hiddenimports`: Flask, pywebview, waitress, PIL
+- `console=False`: Hides console window (set True for debugging)
+- `icon='assets/icon.ico'`: Application icon
+
+**Nuitka alternative**: See `main.py` comments (lines 3-16) for Nuitka project directives
+
+### Database Migrations
+
+**Pattern** (see `initialize_gallery()` lines 2580-2595):
+```python
+cursor = conn.execute("PRAGMA table_info(files)")
+columns = [row['name'] for row in cursor.fetchall()]
+if 'new_column' not in columns:
+    logging.info("Migrating: Adding new_column...")
+    conn.execute("ALTER TABLE files ADD COLUMN new_column TYPE")
+conn.commit()
+```
+
+**Safe for existing DBs**: New columns accept NULL, existing queries work unchanged
 
 ### Debugging Workflow Extraction
 
-Enable debug mode (line 876):
 ```python
-DEBUG_WORKFLOW_EXTRACTION = True
+# In smartgallery.py line 925
+DEBUG_WORKFLOW_EXTRACTION = True  # Enable debug output
+
+# Restart app, process files, check output/workflow_debug/{filename}/
+# Files: 01_raw.json, 02_parsed.json, 03_format_detection.txt, 
+#        04_parser_input.json, 05_parser_output.json
 ```
 
-Creates debug files in `output/workflow_debug/`:
-- `01_raw.json` - Raw extracted JSON
-- `02_parsed.json` - Parsed workflow data
-- `03_format_detection.txt` - Detected format (UI vs API)
-- `05_parser_output.json` - Final extracted metadata
+## Common Pitfalls & Solutions
 
-**Common extraction failures**:
-1. **No "nodes" or node dict** → Check if file has ComfyUI metadata at all
-2. **Missing sampler metadata** → Verify parser node type lists (`SAMPLER_TYPES`, `MODEL_LOADER_TYPES`)
-3. **Multiprocessing issues** → Debug dir must be passed to worker processes (fixed v1.39.4)
+1. **"Address already in use" on restart**
+   - Root cause: Server thread not cleaned up
+   - Solution: v2.1.0 fixed with non-daemon threads + shutdown events
 
-### Performance Optimization Patterns
+2. **Memory grows unbounded**
+   - Root cause: Caches without eviction
+   - Solution: Use `BoundedCache` (v2.1.0), not plain dicts
 
-**Database query pattern** (v1.41.0 - SQL pagination):
-```python
-# WRONG: Load all files into memory
-all_files = db.execute("SELECT * FROM files WHERE ...").fetchall()
-page = all_files[offset:offset+limit]  # Memory bloat!
+3. **Infinite process spawning (PyInstaller)**
+   - Root cause: Module-level code re-runs in worker processes
+   - Solution: `multiprocessing.freeze_support()` at top of `__main__`
 
-# CORRECT: Database-level pagination
-count = db.execute("SELECT COUNT(*) FROM files WHERE ...").fetchone()[0]
-files = db.execute("SELECT * FROM files WHERE ... LIMIT ? OFFSET ?", 
-                   (limit, offset)).fetchall()
-```
+4. **PIL file handle leaks**
+   - Root cause: Image objects not closed in long-running apps
+   - Solution: `with safe_image_operation(path) as img:` context manager
 
-**Thumbnail generation**: Uses `multiprocessing.Pool` with `MAX_PARALLEL_WORKERS` (default: all cores)
-- Set to `1` for debugging to avoid process spawn issues
-- Set to `4-8` for production to balance CPU/memory
+5. **Tom-Select not clearing**
+   - Root cause: Instances not stored globally (v1.40.6 bug)
+   - Solution: Store in `tomSelectInstances` object, call `.clear()` API
 
-### Testing Workflow Changes
+6. **Duplicate files in results (multi-sampler)**
+   - Root cause: JOIN creates duplicate rows when file has 2+ samplers
+   - Solution: Use `EXISTS` subquery, not JOIN (v1.39.0 fix)
 
-1. **Create test files** with embedded workflows (use ComfyUI's Save Image node)
-2. **Clear database** to force re-extraction: `rm .sqlite_cache/gallery_cache.sqlite`
-3. **Enable debug mode** and check `workflow_debug/` output
-4. **Verify SQL queries** using `EXPLAIN QUERY PLAN` for performance
+## Code Style Conventions
 
-### Monitoring & Debugging
+- **SQL**: Uppercase keywords, formatted with line breaks
+- **Logging**: Use `logging.info()`, not `print()`, except in `main.py` config loading
+- **Error handling**: Log with traceback, return JSON `{status: 'error', message: ...}`
+- **Comments**: Multi-line docstrings for functions, inline `# CRITICAL:` for gotchas
+- **Filenames**: `snake_case` for Python, `kebab-case` for static assets
 
-**Performance Monitoring** (added in recent updates):
-- Request timing automatically logged via `@require_initialization` decorator
-- Slow requests (>1s) generate warnings in logs
-- Last 1000 requests kept in memory for analysis
+## Key Files Reference
 
-**Health Check Endpoint**:
-```bash
-curl http://localhost:8008/galleryout/health
-# Returns: database status, file counts, cache stats, avg response time
-```
+- `main.py`: Desktop app entry point, PyWebView wrapper, config loading
+- `smartgallery.py`: Flask app, all backend logic (3821 lines, well-documented)
+- `templates/index.html`: Complete frontend (Alpine.js SPA, 3958 lines)
+- `smartgallery.spec`: PyInstaller build configuration
+- `config.json.example`: Config template (copy to config.json)
+- `BUILD_GUIDE.md`: Build instructions, troubleshooting, verification tests
+- `CONFIGURATION.md`: Config options, paths, auto-detection behavior
 
-**Statistics Endpoint**:
-```bash
-curl http://localhost:8008/galleryout/stats
-# Returns: file type breakdown, workflow stats, performance metrics (p95)
-```
+## When Making Changes
 
-**Cache Monitoring**:
-```python
-# Cache now tracks hits per entry
-cache_stats = get_cache_stats()  # Returns entries count and total hits
-```
+1. **Backend changes**: Test both `python smartgallery.py` and `python main.py` modes
+2. **Database schema**: Add migration in `initialize_gallery()`, update `init_db()`
+3. **Workflow parser**: Add node types to constants at top, test with sample workflows
+4. **Frontend state**: Update Alpine.js component in `index.html`, ensure reactivity
+5. **Build changes**: Update `.spec` file, test `pyinstaller --clean`, verify executable
+6. **Memory critical**: Use `BoundedCache` for any new caching, add cleanup handlers
 
-## Project-Specific Conventions
+## Testing Checklist
 
-### Code Organization
-
-- **No modules/packages** - Single `smartgallery.py` file for portability
-- **Flask routes after helpers** - All utility functions defined before `@app.route` decorators
-- **Alpine.js components** - Use `x-data="componentName()"` pattern, NOT global functions
-- **CSS in `<style>` tag** - No external stylesheets (self-contained deployment)
-
-### Naming Conventions
-
-```python
-# Database columns: snake_case
-file_id, sampler_name, positive_prompt
-
-# Flask routes: lowercase with underscores
-@app.route('/galleryout/view/<folder_key>')
-
-# Alpine.js properties: camelCase
-isLightboxOpen, currentFolderKey, activeFilterPills
-
-# CSS classes: kebab-case with BEM-like structure
-.gallery-item, .filter-panel-header, .lightbox-sampler-panel
-```
-
-### Error Handling Philosophy
-
-**Fail gracefully for metadata extraction**:
-```python
-try:
-    sampler_name = self._extract_sampler_details(node)
-except Exception as e:
-    logging.warning(f"Failed to extract sampler: {e}")
-    sampler_name = None  # Continue processing other fields
-```
-
-**Fail fast for critical paths** (database, file operations):
-```python
-if not os.path.exists(file_path):
-    raise FileNotFoundError(f"File not found: {file_path}")
-```
-
-## Integration Points
-
-### ComfyUI Workflow Embedding
-
-SmartGallery reads workflows from:
-1. **PNG tEXt chunks** - `workflow` and `prompt` keys
-2. **Video metadata** - MP4 comment atom (requires `ffprobe`)
-3. **Direct JSON files** - Fallback for testing
-
-### External Dependencies
-
-- **FFmpeg/ffprobe**: Optional but recommended for video metadata and thumbnails
-- **SQLite**: Bundled with Python, no external setup needed
-- **Tom-Select**: CDN-loaded (multi-select dropdowns)
-- **Alpine.js**: CDN-loaded (reactive UI framework)
-
-### Browser Compatibility
-
-- **Modern browsers only** (ES6+, CSS Grid, Intersection Observer API)
-- **Mobile responsive** - Sidebar collapses, bottom sheet filters
-- **No IE11 support** - Uses `async/await`, `fetch`, template literals
-- **Keyboard shortcuts** - Press `?` to view help modal with all shortcuts (Ctrl+A, Esc, ←/→, etc.)
-
-## Known Limitations & Gotchas
-
-1. **Workflow format detection** - Assumes `nodes` array = UI format. Custom formats may fail.
-2. **Multiprocessing on Windows** - Requires `if __name__ == '__main__'` guard
-3. **Large galleries (>10K files)** - Initial sync can take 5-10 minutes, use progress overlay
-4. **SQLite locking** - Single-writer limitation, avoid concurrent uploads from multiple clients
-5. **Tom-Select state** - Must store instances globally for programmatic clearing (v1.40.6 fix)
-
-## Common Tasks
-
-### Adding a New Filter
-
-1. Add HTML input in filter panel (`index.html` line ~1850)
-2. Add Alpine.js reactive property: `filters.myFilter`
-3. Update `_build_filter_conditions()` in `smartgallery.py` (~line 1603)
-4. Add to `activeFilterPills` computed property for visual feedback
-
-### Adding Workflow Metadata Fields
-
-1. Update `ComfyUIWorkflowParser._extract_parameters()` (~line 605)
-2. Add database column via schema migration in `init_db()`
-3. Add to `workflow_metadata` table INSERT query (~line 1380)
-4. Update filter UI if filterable
-
-### Changing Thumbnail Generation
-
-Edit `create_thumbnail()` function (~line 1238):
-- Images: Pillow resize with `LANCZOS` filter
-- Videos: ffmpeg extract first frame + resize
-- Animated GIFs: Extract first frame, convert to WebP
-
-## Version History Context
-
-- **v1.39.0**: Multi-sampler support (schema v22)
-- **v1.40.0**: Native UI/API format support (removed conversion)
-- **v1.41.0**: SQL pagination (removed in-memory cache)
-- **v1.50.0**: Prompt-first card design, enhanced UX
-
-When editing code, check version-specific comments for rationale behind breaking changes.
+- [ ] Run `python smartgallery.py` (server mode)
+- [ ] Run `python main.py` (desktop mode)
+- [ ] Build with PyInstaller, run `dist/SmartGallery.exe`
+- [ ] Test with large collection (1000+ files) - check memory stability
+- [ ] Test workflow extraction with UI and API format workflows
+- [ ] Test multi-sampler files (verify no duplicates in gallery)
+- [ ] Test filtering (model, sampler, dimensions, date ranges)
+- [ ] Test selection, favorites, delete, rename, move operations
+- [ ] Close and reopen - verify clean shutdown (no orphaned processes)
