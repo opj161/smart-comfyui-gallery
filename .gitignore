@@ -52,3 +52,4 @@ MEMORY_LEAK_FIXES.md
 smartgallery copy.spec
 .gitignore
 README_cleaned.md
+.docs/
