@@ -37,6 +37,7 @@ pub struct WorkflowMetadata {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[allow(dead_code)] // Used in future folder management features
 pub struct FolderConfig {
     pub display_name: String,
     pub path: String,
