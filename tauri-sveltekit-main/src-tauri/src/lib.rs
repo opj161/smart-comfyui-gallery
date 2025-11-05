@@ -1,5 +1,7 @@
 // Declare modules
 mod models;
+mod database;
+mod parser;
 
 // Test command to verify IPC bridge
 #[tauri::command]
