@@ -1177,11 +1177,17 @@
             width: 100%; 
             height: auto; 
             transition: transform var(--transition-slow); 
+            pointer-events: none; /* Prevent video from intercepting clicks */
         }
         
         .gallery-item:hover .thumbnail-wrapper img, 
         .gallery-item:hover .thumbnail-wrapper video { 
             transform: scale(1.05); 
+        }
+        
+        /* Prevent transform jitter on video elements during playback */
+        .gallery-item:hover .thumbnail-wrapper video {
+            transform: scale(1.02); /* Smaller scale to reduce playback interruption */
         }
         
         /* Active/click animation for gallery items */
@@ -1261,7 +1267,7 @@
             top: var(--space-2);
             left: var(--space-2);
             cursor: pointer;
-            z-index: 12;
+            z-index: 13; /* Above workflow badge (z-index: 11) and duration overlay (z-index: 10) */
         }
         
         .selection-checkbox {
@@ -1336,6 +1342,10 @@
         
         .item-action-btn.favorited {
             color: var(--accent-yellow);
+        }
+        
+        .item-action-btn.favorited svg {
+            fill: var(--accent-yellow); /* Fill star icon when favorited */
         }
         
         .item-action-btn svg {
@@ -1969,7 +1979,7 @@
                      @dragstart="dragStart($event, file.id)">
 
                     <!-- NEW: Declarative Selection Overlay on Thumbnail -->
-                    <div class="selection-overlay" @click.prevent="toggleSelection($event, file.id)">
+                    <div class="selection-overlay" @click.stop="toggleSelection($event, file.id)">
                         <div class="selection-checkbox"></div>
                     </div>
 
@@ -3182,13 +3192,21 @@
                  */
                 async toggleFavorite(fileId) {
                     const file = this.filesOnPage.find(f => f.id === fileId);
-                    if (!file) return;
+                    if (!file) {
+                        console.warn('File not found for favorite toggle:', fileId);
+                        return;
+                    }
                     
                     const originalState = file.is_favorite;
                     file.is_favorite = !file.is_favorite; // Optimistic update
                     
                     try {
                         const response = await fetch(`/galleryout/toggle_favorite/${fileId}`, { method: 'POST' });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
                         
                         if (data.status === 'success') {
@@ -3201,6 +3219,7 @@
                             this.$store.notifications.add('Failed to update favorite.', 'error');
                         }
                     } catch (error) {
+                        console.error('Toggle favorite error:', error);
                         file.is_favorite = originalState;
                         this.$store.notifications.add('Network error updating favorite.', 'error');
                     }
@@ -3218,6 +3237,11 @@
                     
                     try {
                         const response = await fetch(`/galleryout/delete/${fileId}`, { method: 'POST' });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
                         
                         if (data.status === 'success') {
@@ -3228,6 +3252,7 @@
                             throw new Error(data.message || 'Deletion failed');
                         }
                     } catch (error) {
+                        console.error('Delete file error:', error);
                         this.$store.notifications.add(`Failed to delete: ${error.message}`, 'error');
                     }
                 },
@@ -3536,12 +3561,21 @@
                 // LIGHTBOX OPERATIONS
                 // ===================================
                 openLightbox(fileId) {
-                    this.currentLightboxIndex = this.filesOnPage.findIndex(f => f.id === fileId);
-                    if (this.currentLightboxIndex === -1) return;
-                    
-                    this.currentZoom = 1;
-                    this.isLightboxOpen = true;
-                    this.showItemAtIndex(this.currentLightboxIndex);
+                    try {
+                        this.currentLightboxIndex = this.filesOnPage.findIndex(f => f.id === fileId);
+                        if (this.currentLightboxIndex === -1) {
+                            console.warn('File not found in current page:', fileId);
+                            return;
+                        }
+                        
+                        this.currentZoom = 1;
+                        this.isLightboxOpen = true;
+                        this.showItemAtIndex(this.currentLightboxIndex);
+                    } catch (error) {
+                        console.error('Error opening lightbox:', error);
+                        this.$store.notifications.add('Failed to open lightbox', 'error');
+                        this.isLightboxOpen = false;
+                    }
                 },
                 
                 closeLightbox() {
@@ -3552,15 +3586,23 @@
                 },
                 
                 showItemAtIndex(index) {
-                    const file = this.filesOnPage[index];
-                    if (!file) return;
-                    
-                    this.currentLightboxFile = file;
-                    this.updateLightboxTitle();
-                    
-                    // Load sampler data if file has workflow
-                    if (file.has_workflow) {
-                        this.loadAndDisplaySamplers(file.id);
+                    try {
+                        const file = this.filesOnPage[index];
+                        if (!file) {
+                            console.warn('No file at index:', index);
+                            return;
+                        }
+                        
+                        this.currentLightboxFile = file;
+                        this.updateLightboxTitle();
+                        
+                        // Load sampler data if file has workflow
+                        if (file.has_workflow) {
+                            this.loadAndDisplaySamplers(file.id);
+                        }
+                    } catch (error) {
+                        console.error('Error showing item at index:', error);
+                        this.$store.notifications.add('Failed to display file', 'error');
                     }
                 },
                 
