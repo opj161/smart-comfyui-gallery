@@ -1,10 +1,16 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import type { FileEntry } from '$lib/types';
+	import type { FileEntry, PaginatedFiles } from '$lib/types';
+	import * as api from '$lib/api';
+	import * as store from '$lib/store';
 
 	let greetMessage = $state('');
 	let testFile = $state<FileEntry | null>(null);
 	let error = $state('');
+	let isInitialized = $state(false);
+	let galleryFiles = $state<FileEntry[]>([]);
+	let stats = $state({ total_files: 0, favorites: 0, with_workflow: 0 });
 
 	async function testGreet() {
 		try {
@@ -25,6 +31,59 @@
 			error = `Error: ${e}`;
 		}
 	}
+
+	async function initGallery() {
+		try {
+			error = '';
+			// Initialize with a default path for testing
+			const result = await api.initializeGallery('/tmp/smartgallery-test');
+			isInitialized = true;
+			greetMessage = result;
+			
+			// Load initial data
+			await loadFiles();
+			await loadStats();
+		} catch (e) {
+			error = `Init error: ${e}`;
+		}
+	}
+
+	async function loadFiles() {
+		try {
+			error = '';
+			const result = await api.getFiles(null, 0, 10);
+			galleryFiles = result.files;
+			store.setFiles(result.files, result.total_count, result.has_more);
+		} catch (e) {
+			error = `Load files error: ${e}`;
+		}
+	}
+
+	async function loadStats() {
+		try {
+			error = '';
+			stats = await api.getStats();
+		} catch (e) {
+			error = `Load stats error: ${e}`;
+		}
+	}
+
+	onMount(async () => {
+		// Set up event listeners
+		const unlistenProgress = await api.listenToSyncProgress((progress) => {
+			store.setSyncProgress(progress);
+		});
+
+		const unlistenComplete = await api.listenToSyncComplete((syncStats) => {
+			store.clearSyncProgress();
+			console.log('Sync complete:', syncStats);
+		});
+
+		return () => {
+			unlistenProgress();
+			unlistenComplete();
+		};
+	});
 </script>
 
 <div
@@ -36,7 +95,7 @@
 	>
 		<div class="mb-8 text-center">
 			<h1 class="text-3xl font-semibold text-gray-900 mb-3">SmartGallery - Tauri Migration</h1>
-			<p class="text-gray-700">Phase 1: Testing Rust-Frontend IPC Bridge</p>
+			<p class="text-gray-700">Phase 3: Tauri Commands & State Management</p>
 		</div>
 
 		<div class="space-y-6">
@@ -52,8 +111,13 @@
 					Tauri v2
 				</span>
 				<span class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm font-medium">
-					Rust
+					Rust Backend
 				</span>
+				{#if isInitialized}
+					<span class="bg-green-100 text-green-800 px-3 py-1 rounded-md text-sm font-medium">
+						✓ Initialized
+					</span>
+				{/if}
 			</div>
 
 			<!-- Test Buttons -->
@@ -71,6 +135,14 @@
 				>
 					Test Get File Command
 				</button>
+
+				<button
+					onclick={initGallery}
+					class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+					disabled={isInitialized}
+				>
+					Initialize Gallery
+				</button>
 			</div>
 
 			<!-- Results Display -->
@@ -83,7 +155,7 @@
 
 			{#if greetMessage}
 				<div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-					<p class="font-medium">Greet Response:</p>
+					<p class="font-medium">Response:</p>
 					<p class="text-sm">{greetMessage}</p>
 				</div>
 			{/if}
@@ -95,11 +167,38 @@
 						class="text-xs overflow-x-auto bg-blue-100 p-2 rounded">{JSON.stringify(testFile, null, 2)}</pre>
 				</div>
 			{/if}
+
+			{#if isInitialized}
+				<div class="bg-purple-50 border border-purple-200 text-purple-900 px-4 py-3 rounded-lg">
+					<p class="font-medium mb-2">Database Stats:</p>
+					<div class="text-sm space-y-1">
+						<p>Total Files: {stats.total_files}</p>
+						<p>Favorites: {stats.favorites}</p>
+						<p>With Workflow: {stats.with_workflow}</p>
+					</div>
+				</div>
+			{/if}
+
+			{#if galleryFiles.length > 0}
+				<div class="bg-indigo-50 border border-indigo-200 text-indigo-900 px-4 py-3 rounded-lg">
+					<p class="font-medium mb-2">Gallery Files ({galleryFiles.length}):</p>
+					<div class="text-sm space-y-2 max-h-40 overflow-y-auto">
+						{#each galleryFiles as file}
+							<div class="bg-white p-2 rounded">
+								<p class="font-medium">{file.name}</p>
+								<p class="text-xs text-gray-600">{file.path}</p>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		<div class="mt-8 text-center text-sm text-gray-600">
-			<p>✅ IPC Bridge established between Rust backend and SvelteKit frontend</p>
-			<p class="mt-2">✅ Type-safe data structures shared across the stack</p>
+			<p>✅ Phase 1: Foundation complete</p>
+			<p>✅ Phase 2: Backend complete (1,565 lines of Rust)</p>
+			<p>✅ Phase 3: Tauri commands (13 implemented)</p>
+			<p class="mt-2">🔄 Next: Complete frontend components</p>
 		</div>
 	</div>
 </div>
