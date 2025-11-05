@@ -1,0 +1,61 @@
+
+{
+	"$schema": "../node_modules/@tauri-apps/cli/schema.json",
+	"productName": "SmartGallery",
+	"version": "2.1.0",
+	"identifier": "com.smartgallery.app",
+	"build": {
+		"beforeBuildCommand": "npm run sveltekit:build",
+		"beforeDevCommand": "npm run sveltekit:dev",
+		"devUrl": "http://localhost:5173",
+		"frontendDist": "../build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "SmartGallery - AI Media Gallery",
+				"width": 1200,
+				"height": 800,
+				"resizable": true,
+				"fullscreen": false
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"category": "Productivity",
+		"copyright": "© 2025 Biagio Maffettone",
+		"shortDescription": "AI-generated media gallery with workflow extraction",
+		"longDescription": "SmartGallery is a powerful desktop application for browsing, organizing, and analyzing AI-generated images and videos. It automatically extracts ComfyUI workflow metadata from your media files.",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"resources": [],
+		"externalBin": [],
+		"linux": {
+			"deb": {
+				"depends": []
+			}
+		},
+		"macOS": {
+			"frameworks": [],
+			"entitlements": null,
+			"exceptionDomain": "",
+			"providerShortName": null,
+			"signingIdentity": null
+		},
+		"windows": {
+			"certificateThumbprint": null,
+			"digestAlgorithm": "sha256",
+			"timestampUrl": ""
+		}
+	}
+}
