@@ -72,7 +72,7 @@ pub async fn initialize_gallery(
 /// Get paginated list of files with filters
 #[tauri::command]
 pub async fn get_files(
-    folder_key: Option<String>,
+    _folder_key: Option<String>,
     page: usize,
     per_page: usize,
     state: State<'_, Arc<Mutex<AppState>>>,
@@ -268,9 +268,12 @@ pub async fn sync_files(
         (pool, config)
     };
     
+    // Clone app_handle for the closure
+    let progress_handle = app_handle.clone();
+    
     // Perform sync with progress events
     let stats = full_sync(&pool, &config, Some(Box::new(move |progress| {
-        let _ = app_handle.emit("sync-progress", &progress);
+        let _ = progress_handle.emit("sync-progress", &progress);
     }))).await?;
     
     // Emit completion event
@@ -669,7 +672,7 @@ pub async fn get_files_filtered(
     }).collect();
     
     // Count total matching
-    let count_query = query.replace("SELECT DISTINCT f.id,", "SELECT COUNT(DISTINCT f.id) as count FROM (SELECT f.id FROM")
+    let _count_query = query.replace("SELECT DISTINCT f.id,", "SELECT COUNT(DISTINCT f.id) as count FROM (SELECT f.id FROM")
         .replace(" LIMIT ? OFFSET ?", "") + ")";
     
     let total_count = database::get_file_count(&pool).await? as usize; // Simplified for now

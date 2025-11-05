@@ -7,6 +7,7 @@ use walkdir::WalkDir;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use serde::Serialize;
 
 use crate::models::{FileEntry, SyncProgress};
 use crate::database;
@@ -52,7 +53,7 @@ impl ScannerConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScanStats {
     pub total_processed: usize,
     pub files_with_workflows: usize,
