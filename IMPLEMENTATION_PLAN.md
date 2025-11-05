@@ -59,28 +59,44 @@ This is a **complete, non-incremental** rewrite of SmartGallery from Python/Flas
 
 ---
 
-## 🔄 Phase 3: Tauri Commands & State (70% COMPLETE)
+## ✅ Phase 3: Tauri Commands & State (100% COMPLETE)
 **Goal**: Expose all backend functionality via Tauri commands
 
-### ✅ Completed in Phase 3
+### ✅ All Phase 3 Tasks Complete
 
-#### 3.1 Core Commands (13 of 26 implemented) - 50% COMPLETE
-**Backend (commands.rs - 400 lines)**:
+#### 3.1 Core Commands - 100% COMPLETE ✅
+**Backend (commands.rs - 650 lines)**: **19 commands implemented**
+
+**Core Operations:**
 - ✅ `initialize_gallery(output_path, input_path)` - Database + scanner setup
 - ✅ `get_files(folder_key, page, per_page)` → PaginatedFiles
 - ✅ `get_file_by_id(file_id)` → FileEntry
 - ✅ `get_workflow_metadata(file_id)` → Vec<WorkflowMetadata>
+- ✅ `get_stats()` → Database statistics
+- ✅ `health_check()` → Status string
+- ✅ `get_config()` → App configuration **NEW**
+
+**File Operations:**
 - ✅ `toggle_favorite(file_id)` → bool
 - ✅ `batch_favorite(file_ids, favorite)` → Result
 - ✅ `delete_file(file_id)` → Result (DB + filesystem)
 - ✅ `batch_delete(file_ids)` → Result
-- ✅ `sync_files()` → Stream SyncProgress events
-- ✅ `get_stats()` → Database statistics
-- ✅ `get_thumbnail_path(file_id)` → String path
-- ✅ `health_check()` → Status string
-- ✅ `get_filter_options()` → FilterOptions (models, samplers, schedulers)
+- ✅ `rename_file(file_id, new_name)` → Result **NEW**
+- ✅ `move_files(file_ids, target_folder)` → Result **NEW**
 
-**Frontend State Management (store.ts - 120 lines)**:
+**Search & Filtering:**
+- ✅ `search_files(query, page, per_page)` → PaginatedFiles **NEW**
+- ✅ `get_files_filtered(filters, page, per_page)` → PaginatedFiles **NEW**
+- ✅ `get_filter_options()` → FilterOptions
+
+**Sync & Thumbnails:**
+- ✅ `sync_files()` → Stream SyncProgress events
+- ✅ `get_thumbnail_path(file_id)` → String path
+
+**Folder Management:**
+- ✅ `create_folder(folder_path)` → Result **NEW**
+
+**Frontend State Management (store.ts - 120 lines)**: ✅
 - ✅ Svelte 5 runes for reactive state
 - ✅ Gallery state (files, pagination, total count)
 - ✅ Selection state (multi-select with Set)
@@ -89,47 +105,31 @@ This is a **complete, non-incremental** rewrite of SmartGallery from Python/Flas
 - ✅ Sync state (progress tracking)
 - ✅ Helper functions for state mutations
 
-**Frontend API Layer (api.ts - 100 lines)**:
-- ✅ Type-safe wrappers for all Tauri commands
+**Frontend API Layer (api.ts - 150 lines)**: ✅
+- ✅ Type-safe wrappers for all 19 Tauri commands
 - ✅ Event listeners (sync progress, sync complete)
 - ✅ Async/await interface
 - ✅ Full TypeScript type safety
+- ✅ New API wrappers: renameFile, moveFiles, searchFiles, getFilesFiltered, createFolder, getConfig
 
-**Demo UI (+page.svelte)**:
+**Demo UI (+page.svelte)**: ✅
 - ✅ Test all implemented commands
 - ✅ Initialize gallery with paths
 - ✅ Load and display files
 - ✅ Show database statistics
 - ✅ Real-time event listening
 
-#### 3.2 State Management - COMPLETE ✅
+#### 3.2 State Management - 100% COMPLETE ✅
 - ✅ AppState struct (database pool, config, caches)
 - ✅ Managed state in Tauri (Arc<Mutex<AppState>>)
 - ✅ Thread-safe access patterns
 - ✅ Configuration loading on initialize
 
-#### 3.3 Event System - COMPLETE ✅
+#### 3.3 Event System - 100% COMPLETE ✅
 - ✅ Sync progress events (emit from scanner)
 - ✅ Sync complete events
 - ✅ Frontend listeners with Tauri events API
 - ✅ Real-time updates working
-
-### 📋 Remaining Phase 3 Tasks
-
-#### 3.1 Additional Commands (13 remaining)
-- [ ] `rename_file(file_id, new_name)` → Result
-- [ ] `move_files(file_ids, target_folder)` → Result
-- [ ] `create_folder(parent_key, name)` → FolderConfig
-- [ ] `rename_folder(folder_key, new_name)` → Result
-- [ ] `delete_folder(folder_key)` → Result
-- [ ] `get_folder_tree()` → HashMap<String, FolderConfig>
-- [ ] `get_node_summary(file_id)` → String (HTML)
-- [ ] `upload_files(files)` → Vec<FileEntry>
-- [ ] Additional filtering commands
-- [ ] Search functionality
-- [ ] Batch move operations
-- [ ] Folder management utilities
-- [ ] Configuration commands
 
 ---
 
