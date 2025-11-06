@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"SmartGallery default permissions","local":true,"windows":["*"],"permissions":["core:default","core:window:default","core:webview:default","core:event:default","core:path:default"]}}

@@ -1,8 +1,8 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/schema.json",
-	"productName": "tauri-sveltekit",
-	"version": "0.1.0",
-	"identifier": "com.auros.tauri-sveltekit",
+	"productName": "SmartGallery",
+	"version": "2.0.0",
+	"identifier": "com.smartgallery.app",
 	"build": {
 		"beforeBuildCommand": "npm run sveltekit:build",
 		"beforeDevCommand": "npm run sveltekit:dev",
@@ -12,24 +12,27 @@
 	"app": {
 		"windows": [
 			{
-				"title": "Tauri x SvelteKit",
-				"width": 800,
-				"height": 600,
+				"title": "SmartGallery - AI Media Gallery",
+				"width": 1400,
+				"height": 900,
+				"minWidth": 1024,
+				"minHeight": 768,
 				"resizable": true,
 				"fullscreen": false
 			}
 		],
 		"security": {
 			"csp": null
-		}
+		},
+		"withGlobalTauri": true
 	},
 	"bundle": {
 		"active": true,
 		"targets": "all",
-		"category": "DeveloperTool",
-		"copyright": "",
-		"shortDescription": "",
-		"longDescription": "",
+		"category": "Utility",
+		"copyright": "Copyright © 2025 SmartGallery",
+		"shortDescription": "AI-powered gallery for ComfyUI generated media",
+		"longDescription": "SmartGallery is a powerful desktop application for browsing, organizing, and analyzing AI-generated media files from ComfyUI. Features include workflow extraction, advanced filtering, thumbnail generation, and metadata display.",
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
@@ -41,7 +44,7 @@
 		"externalBin": [],
 		"linux": {
 			"deb": {
-				"depends": []
+				"depends": ["libwebkit2gtk-4.0-37", "libgtk-3-0"]
 			}
 		},
 		"macOS": {
@@ -49,12 +52,17 @@
 			"entitlements": null,
 			"exceptionDomain": "",
 			"providerShortName": null,
-			"signingIdentity": null
+			"signingIdentity": null,
+			"minimumSystemVersion": "10.15"
 		},
 		"windows": {
 			"certificateThumbprint": null,
 			"digestAlgorithm": "sha256",
-			"timestampUrl": ""
+			"timestampUrl": "",
+			"wix": {
+				"language": "en-US"
+			}
 		}
 	}
 }
+
