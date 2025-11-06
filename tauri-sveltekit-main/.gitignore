@@ -49,4 +49,4 @@ src-tauri/gen/
 # Test data (optional - uncomment if you don't want to commit test files)
 # test_data/
 
-*.md
+.docs/
