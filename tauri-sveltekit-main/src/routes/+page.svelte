@@ -8,8 +8,11 @@
 	import FilterPanel from '$lib/components/FilterPanel.svelte';
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 	import UploadZone from '$lib/components/UploadZone.svelte';
+	import ToastManager from '$lib/components/ToastManager.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import type { AppConfig } from '$lib/types';
+	import { toast } from '$lib/stores/toast.svelte';
+	import { withErrorHandling } from '$lib/utils/errors';
 
 	let isInitialized = $state(false);
 	let isLoading = $state(true);
