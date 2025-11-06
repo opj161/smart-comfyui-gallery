@@ -198,21 +198,31 @@ pub async fn delete_file(
     file_id: String,
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<(), String> {
-    let pool = {
+    use crate::security::{validate_path, get_allowed_directories};
+    
+    let (pool, allowed_dirs) = {
         let app_state = state.lock().unwrap();
-        app_state.db_pool.as_ref()
+        let pool = app_state.db_pool.as_ref()
             .ok_or("Database not initialized")?
-            .clone()
+            .clone();
+        let allowed = get_allowed_directories(
+            &app_state.output_path,
+            &app_state.input_path
+        );
+        (pool, allowed)
     };
     
     // Get file path before deleting from DB
     let file = database::get_file_by_id(&pool, &file_id).await?;
     
     if let Some(file_entry) = file {
-        // Delete from filesystem
+        // Delete from filesystem with path validation
         let path = PathBuf::from(&file_entry.path);
         if path.exists() {
-            std::fs::remove_file(&path)
+            // SECURITY: Validate path before deletion
+            let validated_path = validate_path(&path, &allowed_dirs)?;
+            
+            std::fs::remove_file(&validated_path)
                 .map_err(|e| format!("Failed to delete file: {}", e))?;
         }
         
@@ -709,4 +719,117 @@ pub async fn get_config(
         "input_path": app_state.input_path.as_ref().map(|p| p.to_string_lossy().to_string()),
         "initialized": app_state.db_pool.is_some(),
     }))
+}
+
+/// Upload a single file to the gallery
+#[tauri::command]
+pub async fn upload_file(
+    source_path: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<String, String> {
+    use crate::security::get_allowed_directories;
+    use crate::scanner;
+    use std::fs;
+    
+    let (pool, output_path, scanner_config, _allowed_dirs) = {
+        let app_state = state.lock().unwrap();
+        let pool = app_state.db_pool.as_ref()
+            .ok_or("Database not initialized")?
+            .clone();
+        let output = app_state.output_path.as_ref()
+            .ok_or("Output path not set")?
+            .clone();
+        let scanner = app_state.scanner_config.as_ref()
+            .ok_or("Scanner config not set")?
+            .clone();
+        let allowed = get_allowed_directories(
+            &app_state.output_path,
+            &app_state.input_path
+        );
+        (pool, output, scanner, allowed)
+    };
+
+    // Validate source file exists
+    let source = PathBuf::from(&source_path);
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    // Get filename
+    let filename = source.file_name()
+        .ok_or("Invalid filename")?
+        .to_string_lossy()
+        .to_string();
+
+    // Generate destination path
+    let mut dest_path = output_path.join(&filename);
+
+    // Handle duplicate filenames
+    if dest_path.exists() {
+        let stem = source.file_stem()
+            .ok_or("Invalid filename")?
+            .to_string_lossy();
+        let ext = source.extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
+        let mut counter = 1;
+        loop {
+            let unique_name = format!("{}_{}{}", stem, counter, ext);
+            dest_path = output_path.join(&unique_name);
+            if !dest_path.exists() {
+                break;
+            }
+            counter += 1;
+        }
+    }
+
+    // Copy file to output directory
+    fs::copy(&source, &dest_path)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    // Process the uploaded file
+    let file_entry = scanner::process_file(&dest_path, &scanner_config)?;
+    
+    // Insert to database
+    database::upsert_file(&pool, &file_entry).await?;
+    
+    Ok(file_entry.id)
+}
+
+/// Upload multiple files to the gallery
+#[tauri::command]
+pub async fn upload_multiple_files(
+    source_paths: Vec<String>,
+    state: State<'_, Arc<Mutex<AppState>>>,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    let mut file_ids = Vec::new();
+    let total = source_paths.len();
+
+    for (index, source_path) in source_paths.iter().enumerate() {
+        // Emit progress event
+        let _ = app_handle.emit("upload-progress", serde_json::json!({
+            "current": index + 1,
+            "total": total,
+            "filename": PathBuf::from(source_path).file_name().and_then(|f| f.to_str())
+        }));
+
+        // Upload file
+        match upload_file(source_path.clone(), state.clone()).await {
+            Ok(file_id) => file_ids.push(file_id),
+            Err(e) => {
+                eprintln!("Failed to upload {}: {}", source_path, e);
+                // Continue with other files
+            }
+        }
+    }
+
+    // Emit completion event
+    let _ = app_handle.emit("upload-complete", serde_json::json!({
+        "total": total,
+        "success": file_ids.len(),
+        "failed": total - file_ids.len()
+    }));
+
+    Ok(file_ids)
 }

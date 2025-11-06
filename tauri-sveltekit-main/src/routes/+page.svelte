@@ -6,6 +6,9 @@
 	import GalleryGrid from '$lib/components/GalleryGrid.svelte';
 	import Lightbox from '$lib/components/Lightbox.svelte';
 	import FilterPanel from '$lib/components/FilterPanel.svelte';
+	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
+	import UploadZone from '$lib/components/UploadZone.svelte';
+	import { invoke } from '@tauri-apps/api/core';
 
 	let isInitialized = $state(false);
 	let isLoading = $state(true);
@@ -16,29 +19,35 @@
 	let isSyncing = $state(false);
 	let syncProgress = $state(0);
 	let syncTotal = $state(0);
+	let showSettings = $state(false);
+	let showUpload = $state(false);
 
 	// Initialize gallery on mount
 	onMount(async () => {
 		try {
-			// Default to ComfyUI standard paths
-			// User can change these later via settings
-			const defaultOutputPath = 'C:\\.ai\\ComfyUI\\output';
-			const defaultInputPath = 'C:\\.ai\\ComfyUI\\input';
+			// Try to load config first
+			const config = await invoke('load_config');
 			
-			console.log('Initializing gallery at:', defaultOutputPath);
-			console.log('Input path (optional):', defaultInputPath);
-			
-			await api.initializeGallery(defaultOutputPath, defaultInputPath);
-			isInitialized = true;
+			if (config && config.output_path) {
+				// Initialize with saved config
+				await api.initializeGallery(config.output_path, config.input_path || null);
+				isInitialized = true;
 
-			// Load initial files
-			await loadFiles(0);
+				// Load initial files
+				await loadFiles(0);
 
-			// Set up event listeners
-			await setupEventListeners();
+				// Set up event listeners
+				await setupEventListeners();
+			} else {
+				// Show settings panel to configure
+				showSettings = true;
+				isLoading = false;
+			}
 		} catch (error) {
 			console.error('Failed to initialize gallery:', error);
-			alert(`Failed to initialize gallery: ${error}`);
+			// Show settings panel for first-time configuration
+			showSettings = true;
+			isLoading = false;
 		}
 	});
 
@@ -210,6 +219,14 @@
 					<span>⚙</span>
 					<span>Filters</span>
 				</button>
+				<button class="btn btn-secondary" onclick={() => (showUpload = true)}>
+					<span>⬆</span>
+					<span>Upload</span>
+				</button>
+				<button class="btn btn-secondary" onclick={() => (showSettings = true)}>
+					<span>⚙</span>
+					<span>Settings</span>
+				</button>
 			</div>
 			{#if hasSelection}
 				<div class="toolbar-center">
@@ -244,6 +261,48 @@
 	{:else}
 		<div class="loading-screen">
 			<p>Initializing gallery...</p>
+			{#if showSettings}
+				<p class="hint">Please configure your ComfyUI paths to continue</p>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Settings Panel -->
+	{#if showSettings}
+		<SettingsPanel
+			onClose={async () => {
+				showSettings = false;
+				// Reload the app after settings are saved
+				try {
+					const config = await invoke('load_config');
+					if (config && config.output_path && !isInitialized) {
+						await api.initializeGallery(config.output_path, config.input_path || null);
+						isInitialized = true;
+						await loadFiles(0);
+						await setupEventListeners();
+					}
+				} catch (e) {
+					console.error('Failed to reload after settings:', e);
+				}
+			}}
+		/>
+	{/if}
+
+	<!-- Upload Zone -->
+	{#if showUpload}
+		<div class="modal-overlay" onclick={() => (showUpload = false)}>
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<div class="modal-header">
+					<h2>Upload Files</h2>
+					<button class="close-button" onclick={() => (showUpload = false)}>×</button>
+				</div>
+				<UploadZone
+					onComplete={async () => {
+						showUpload = false;
+						await loadFiles(0);
+					}}
+				/>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -452,6 +511,92 @@
 
 		.selection-actions {
 			flex-wrap: wrap;
+		}
+	}
+
+	/* Modal styles */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.75);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		animation: fadeIn 0.2s ease-out;
+	}
+
+	.modal-content {
+		background: #1a1a1a;
+		border-radius: 12px;
+		max-width: 700px;
+		width: 90%;
+		max-height: 90vh;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		animation: slideUp 0.3s ease-out;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem;
+		border-bottom: 1px solid #333;
+	}
+
+	.modal-header h2 {
+		margin: 0;
+		font-size: 1.5rem;
+		color: #e0e0e0;
+	}
+
+	.close-button {
+		background: none;
+		border: none;
+		font-size: 2rem;
+		color: #999;
+		cursor: pointer;
+		padding: 0;
+		width: 2rem;
+		height: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		transition: all 0.2s;
+	}
+
+	.close-button:hover {
+		background: #333;
+		color: #fff;
+	}
+
+	.hint {
+		color: #999;
+		font-size: 0.9rem;
+		margin-top: 0.5rem;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes slideUp {
+		from {
+			transform: translateY(20px);
+			opacity: 0;
+		}
+		to {
+			transform: translateY(0);
+			opacity: 1;
 		}
 	}
 </style>
