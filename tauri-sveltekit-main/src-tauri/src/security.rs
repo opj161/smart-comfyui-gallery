@@ -45,6 +45,7 @@ pub fn get_allowed_directories(
 }
 
 /// Validate and sanitize a file path for safe operations
+#[allow(dead_code)]
 pub fn sanitize_filename(filename: &str) -> Result<String, String> {
     // Remove path traversal attempts
     if filename.contains("..") || filename.contains("/") || filename.contains("\\") {

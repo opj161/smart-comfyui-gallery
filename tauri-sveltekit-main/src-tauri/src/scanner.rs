@@ -14,6 +14,7 @@ use crate::database;
 use crate::parser;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ScannerConfig {
     pub output_path: PathBuf,
     pub input_path: Option<PathBuf>,

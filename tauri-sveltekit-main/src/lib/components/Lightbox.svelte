@@ -79,8 +79,15 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isOpen && currentFile}
-	<div class="lightbox-overlay" onclick={handleBackdropClick}>
-		<div class="lightbox-container">
+	<div
+		class="lightbox-overlay"
+		onclick={handleBackdropClick}
+		onkeydown={(e) => e.key === 'Escape' && store.closeLightbox()}
+		role="button"
+		tabindex="0"
+		aria-label="Close lightbox"
+	>
+		<div class="lightbox-container" role="dialog" aria-modal="true">
 			<!-- Close Button -->
 			<button class="lightbox-close" onclick={() => store.closeLightbox()} aria-label="Close">
 				<span class="close-icon">×</span>

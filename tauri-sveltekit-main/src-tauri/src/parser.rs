@@ -36,6 +36,7 @@ const PROMPT_NODE_TYPES: &[&str] = &[
     "CLIPTextEncodeSDXLRefiner",
 ];
 
+#[allow(dead_code)]
 const SCHEDULER_NODE_TYPES: &[&str] = &[
     "BasicScheduler",
     "KarrasScheduler",
@@ -43,6 +44,7 @@ const SCHEDULER_NODE_TYPES: &[&str] = &[
     "SgmUniformScheduler",
 ];
 
+#[allow(dead_code)]
 const SAMPLER_SELECT_NODE_TYPES: &[&str] = &["KSamplerSelect"];
 
 #[derive(Debug, Clone)]

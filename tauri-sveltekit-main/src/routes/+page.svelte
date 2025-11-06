@@ -9,6 +9,7 @@
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 	import UploadZone from '$lib/components/UploadZone.svelte';
 	import { invoke } from '@tauri-apps/api/core';
+	import type { AppConfig } from '$lib/types';
 
 	let isInitialized = $state(false);
 	let isLoading = $state(true);
@@ -26,7 +27,7 @@
 	onMount(async () => {
 		try {
 			// Try to load config first
-			const config = await invoke('load_config');
+			const config = await invoke<AppConfig>('load_config');
 			
 			if (config && config.output_path) {
 				// Initialize with saved config
@@ -274,7 +275,7 @@
 				showSettings = false;
 				// Reload the app after settings are saved
 				try {
-					const config = await invoke('load_config');
+					const config = await invoke<AppConfig>('load_config');
 					if (config && config.output_path && !isInitialized) {
 						await api.initializeGallery(config.output_path, config.input_path || null);
 						isInitialized = true;
@@ -290,10 +291,24 @@
 
 	<!-- Upload Zone -->
 	{#if showUpload}
-		<div class="modal-overlay" onclick={() => (showUpload = false)}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div
+			class="modal-overlay"
+			onclick={() => (showUpload = false)}
+			onkeydown={(e) => e.key === 'Escape' && (showUpload = false)}
+			role="button"
+			tabindex="0"
+			aria-label="Close upload dialog"
+		>
+			<div
+				class="modal-content"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="upload-dialog-title"
+			>
 				<div class="modal-header">
-					<h2>Upload Files</h2>
+					<h2 id="upload-dialog-title">Upload Files</h2>
 					<button class="close-button" onclick={() => (showUpload = false)}>×</button>
 				</div>
 				<UploadZone

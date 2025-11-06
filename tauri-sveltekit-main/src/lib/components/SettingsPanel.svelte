@@ -47,10 +47,25 @@
 	loadConfig();
 </script>
 
-<div class="settings-overlay" onclick={onClose} role="button" tabindex="0">
-	<div class="settings-panel" onclick={(e) => e.stopPropagation()} role="dialog">
+<div
+	class="settings-overlay"
+	onclick={onClose}
+	onkeydown={(e) => e.key === 'Escape' && onClose()}
+	role="button"
+	tabindex="0"
+	aria-label="Close settings dialog"
+>
+	<div
+		class="settings-panel"
+		onclick={(e) => e.stopPropagation()}
+		onkeydown={(e) => e.stopPropagation()}
+		role="dialog"
+		tabindex="-1"
+		aria-modal="true"
+		aria-labelledby="settings-dialog-title"
+	>
 		<div class="settings-header">
-			<h2>Settings</h2>
+			<h2 id="settings-dialog-title">Settings</h2>
 			<button class="close-button" onclick={onClose}>×</button>
 		</div>
 
@@ -248,31 +263,6 @@
 	select:focus {
 		outline: none;
 		border-color: #0066cc;
-	}
-
-	.path-input {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.path-input input {
-		flex: 1;
-	}
-
-	.browse-button {
-		padding: 0.75rem 1.25rem;
-		background: #0066cc;
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		font-weight: 500;
-		transition: background 0.2s;
-		white-space: nowrap;
-	}
-
-	.browse-button:hover {
-		background: #0052a3;
 	}
 
 	.hint {

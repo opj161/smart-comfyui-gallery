@@ -157,6 +157,7 @@ pub fn get_or_create_thumbnail(
 }
 
 /// Check if thumbnail exists for a file
+#[allow(dead_code)]
 pub fn thumbnail_exists(filepath: &Path, config: &ThumbnailConfig) -> bool {
     let file_hash = generate_file_hash(filepath);
     
@@ -187,6 +188,7 @@ pub fn get_thumbnail_path(filepath: &Path, config: &ThumbnailConfig) -> Option<P
 }
 
 /// Clean up old/unused thumbnails
+#[allow(dead_code)]
 pub fn cleanup_thumbnails(
     valid_file_paths: &[PathBuf],
     config: &ThumbnailConfig,

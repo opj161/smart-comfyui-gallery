@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use std::hash::Hash;
 
+// Allow dead_code since this is a public API for future use
+#[allow(dead_code)]
 pub struct CachedItem<V> {
     pub value: V,
     pub inserted_at: Instant,
@@ -10,6 +12,7 @@ pub struct CachedItem<V> {
     pub access_count: u32,
 }
 
+#[allow(dead_code)]
 pub struct BoundedCache<K, V>
 where
     K: Eq + Hash + Clone,
@@ -116,6 +119,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CacheStats {
     pub size: usize,

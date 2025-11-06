@@ -65,10 +65,17 @@
 </script>
 
 {#if isOpen}
-	<div class="filter-panel-backdrop" onclick={handleBackdropClick}>
-		<div class="filter-panel">
+	<div
+		class="filter-panel-backdrop"
+		onclick={handleBackdropClick}
+		onkeydown={(e) => e.key === 'Escape' && onClose()}
+		role="button"
+		tabindex="0"
+		aria-label="Close filter panel"
+	>
+		<div class="filter-panel" role="dialog" aria-modal="true" aria-labelledby="filter-panel-title">
 			<div class="filter-header">
-				<h2>Filters</h2>
+				<h2 id="filter-panel-title">Filters</h2>
 				<button class="btn-close" onclick={onClose} aria-label="Close">×</button>
 			</div>
 

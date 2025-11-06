@@ -8,7 +8,7 @@
 	let uploadTotal = $state(0);
 	let currentFile = $state('');
 	let { onComplete }: { onComplete: () => void } = $props();
-	let fileInput: HTMLInputElement;
+	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 
 	async function handleDrop(event: DragEvent) {
 		event.preventDefault();
