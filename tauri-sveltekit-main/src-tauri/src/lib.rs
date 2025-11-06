@@ -8,6 +8,7 @@ mod commands;
 mod config;
 mod security;
 mod cache;
+mod errors;
 
 use std::sync::{Arc, Mutex};
 use commands::AppState;
