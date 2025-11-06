@@ -49,7 +49,7 @@
     }
   }
   
-  function handleClick(event: MouseEvent) {
+  function handleClick(event: MouseEvent | KeyboardEvent) {
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       event.preventDefault();
       store.toggleFileSelection(file.id);

@@ -31,7 +31,7 @@
 			
 			if (config && config.output_path) {
 				// Initialize with saved config
-				await api.initializeGallery(config.output_path, config.input_path || null);
+				await api.initializeGallery(config.output_path, config.input_path || undefined);
 				isInitialized = true;
 
 				// Load initial files
@@ -277,7 +277,7 @@
 				try {
 					const config = await invoke<AppConfig>('load_config');
 					if (config && config.output_path && !isInitialized) {
-						await api.initializeGallery(config.output_path, config.input_path || null);
+						await api.initializeGallery(config.output_path, config.input_path || undefined);
 						isInitialized = true;
 						await loadFiles(0);
 						await setupEventListeners();
@@ -304,6 +304,7 @@
 				onclick={(e) => e.stopPropagation()}
 				onkeydown={(e) => e.stopPropagation()}
 				role="dialog"
+				tabindex="-1"
 				aria-modal="true"
 				aria-labelledby="upload-dialog-title"
 			>
