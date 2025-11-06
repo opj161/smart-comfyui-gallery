@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FileEntry } from '$lib/types';
-  import { toggleSelection } from '$lib/store';
+  import { store } from '$lib/store.svelte';
   import * as api from '$lib/api';
   
   interface Props {
@@ -22,7 +22,10 @@
   
   async function loadThumbnail() {
     try {
-      thumbnailUrl = await api.getThumbnailPath(file.id);
+      const url = await api.getThumbnailPath(file.id);
+      if (url) {
+        thumbnailUrl = url;
+      }
       isLoading = false;
     } catch (error) {
       console.error('Failed to load thumbnail:', error);
@@ -49,14 +52,14 @@
   function handleClick(event: MouseEvent) {
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       event.preventDefault();
-      toggleSelection(file.id);
+      store.toggleFileSelection(file.id);
     } else {
       onOpenLightbox(file.id);
     }
   }
   
   function handleCheckboxChange() {
-    toggleSelection(file.id);
+    store.toggleFileSelection(file.id);
   }
 </script>
 

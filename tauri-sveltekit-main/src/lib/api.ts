@@ -11,10 +11,7 @@ import type {
 } from '$lib/types';
 
 // Initialize gallery
-export async function initializeGallery(
-	outputPath: string,
-	inputPath?: string
-): Promise<string> {
+export async function initializeGallery(outputPath: string, inputPath?: string): Promise<string> {
 	return await invoke('initialize_gallery', { outputPath, inputPath });
 }
 

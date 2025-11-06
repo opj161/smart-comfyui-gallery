@@ -1,6 +1,9 @@
 {
-	"name": "tauri-sveltekit",
-	"version": "0.0.1",
+	"name": "smartgallery",
+	"version": "2.0.0",
+	"description": "AI-powered gallery for ComfyUI generated media",
+	"author": "SmartGallery Team",
+	"license": "MIT",
 	"private": true,
 	"scripts": {
 		"dev": "npm run tauri dev",
