@@ -854,3 +854,22 @@ pub async fn upload_multiple_files(
 
     Ok(file_ids)
 }
+
+/// Check if ffmpeg is available in the system PATH
+/// This is required for video thumbnail generation
+#[tauri::command]
+pub fn check_ffmpeg() -> Result<bool, String> {
+    use std::process::Command;
+    
+    // Try to run ffmpeg -version
+    match Command::new("ffmpeg").arg("-version").output() {
+        Ok(output) => {
+            if output.status.success() {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        Err(_) => Ok(false), // ffmpeg not found in PATH
+    }
+}

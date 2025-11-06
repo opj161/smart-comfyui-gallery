@@ -75,6 +75,8 @@ pub fn run() {
             // File upload
             commands::upload_file,
             commands::upload_multiple_files,
+            // System checks
+            commands::check_ffmpeg,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

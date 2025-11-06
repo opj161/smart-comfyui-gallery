@@ -382,10 +382,12 @@ pub async fn full_sync(
     
     let total_files = files_to_process.len();
     
-    // Delete removed files
-    for _path in &to_delete {
-        // We'd need to get the file_id from the path first
-        // For now, just note that we'd delete them
+    // Delete removed files from database
+    for path in &to_delete {
+        let file_id = generate_file_id(&PathBuf::from(path));
+        if let Err(e) = database::delete_file(pool, &file_id).await {
+            eprintln!("Failed to delete file record for {}: {}", path, e);
+        }
     }
     
     // Process files in parallel using Rayon

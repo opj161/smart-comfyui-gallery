@@ -26,8 +26,21 @@
 	let showSettings = $state(false);
 	let showUpload = $state(false);
 
+	// Check if running in Tauri
+	function isTauri(): boolean {
+		return typeof window !== 'undefined' && '__TAURI__' in window;
+	}
+
 	// Initialize gallery on mount
 	onMount(async () => {
+		// Ensure we're running in Tauri context
+		if (!isTauri()) {
+			console.error('Not running in Tauri context');
+			showSettings = true;
+			isLoading = false;
+			return;
+		}
+
 		try {
 			// Try to load config first
 			const config = await invoke<AppConfig>('load_config');
