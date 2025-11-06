@@ -10,6 +10,7 @@ pub struct ThumbnailConfig {
     pub cache_dir: PathBuf,
     pub width: u32,
     pub height: u32,
+    #[allow(dead_code)]
     pub quality: u8,
 }
 

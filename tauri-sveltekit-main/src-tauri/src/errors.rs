@@ -50,6 +50,7 @@ impl From<AppError> for String {
 }
 
 // Helper function to create user-friendly error messages
+#[allow(dead_code)]
 pub fn to_user_message(error: &AppError) -> String {
     match error {
         AppError::DatabaseError(_) => "A database error occurred. Please try again.".to_string(),

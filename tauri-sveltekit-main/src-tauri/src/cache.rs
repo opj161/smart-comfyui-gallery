@@ -22,6 +22,7 @@ where
     ttl: Duration,
 }
 
+#[allow(dead_code)]
 impl<K, V> BoundedCache<K, V>
 where
     K: Eq + Hash + Clone,

@@ -31,15 +31,16 @@
 		if (!currentFile) return;
 		
 		try {
-			// Get thumbnail path and convert to asset:// URL
+			// Convert full file path for BOTH images and videos
+			// In lightbox, we want to show the full-resolution file, not the thumbnail
+			if (currentFile.path) {
+				fullFileSrc = convertFileSrc(currentFile.path);
+			}
+			
+			// Keep thumbnail as fallback for images
 			const thumbPath = await api.getThumbnailPath(currentFile.id);
 			if (thumbPath) {
 				thumbnailUrl = convertFileSrc(thumbPath);
-			}
-			
-			// Convert full file path for videos
-			if (currentFile.path) {
-				fullFileSrc = convertFileSrc(currentFile.path);
 			}
 		} catch (error) {
 			console.error('Failed to load file URLs:', error);
@@ -130,7 +131,9 @@
 		{/if}			<!-- Image -->
 			<div class="lightbox-image-container">
 				{#if currentFile.type === 'image'}
-					{#if thumbnailUrl}
+					{#if fullFileSrc}
+						<img src={fullFileSrc} alt={currentFile.name} class="lightbox-image" />
+					{:else if thumbnailUrl}
 						<img src={thumbnailUrl} alt={currentFile.name} class="lightbox-image" />
 					{:else}
 						<div class="loading">Loading image...</div>

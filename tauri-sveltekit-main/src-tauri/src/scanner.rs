@@ -148,10 +148,11 @@ fn generate_file_id(path: &Path) -> String {
 }
 
 /// Process a single file: extract metadata, workflow, create thumbnail
+/// Returns both the FileEntry and the parsed workflow data
 pub fn process_file(
     filepath: &Path,
     config: &ScannerConfig,
-) -> Result<FileEntry, String> {
+) -> Result<(FileEntry, Vec<parser::ParsedWorkflow>), String> {
     // Generate file ID
     let file_id = generate_file_id(filepath);
     
@@ -212,7 +213,7 @@ pub fn process_file(
         (None, None, 0)
     };
     
-    Ok(FileEntry {
+    let file_entry = FileEntry {
         id: file_id,
         path: filepath.to_string_lossy().to_string(),
         name: file_name,
@@ -225,7 +226,10 @@ pub fn process_file(
         dimensions,
         duration,
         sampler_count,
-    })
+    };
+    
+    // Return both the file entry and the workflow metadata
+    Ok((file_entry, workflow_metadata))
 }
 
 /// Extract workflow from PNG tEXt chunk or video metadata
@@ -387,22 +391,72 @@ pub async fn full_sync(
     // Process files in parallel using Rayon
     let stats = Arc::new(Mutex::new(ScanStats::new()));
     let processed = Arc::new(Mutex::new(0usize));
+    let pool_arc = Arc::new(pool.clone());
     
     files_to_process
         .par_iter()
         .for_each(|path| {
             let path_buf = PathBuf::from(path);
+            let pool_clone = pool_arc.clone();
             
-            match process_file(&path_buf, config) {
-                Ok(file_entry) => {
-                    // In a real implementation, we'd insert into database here
-                    // For now, just update stats
+            // Use block_on to execute async database operations in sync context
+            let result = tauri::async_runtime::block_on(async {
+                // Process file to get metadata AND workflow data in one pass
+                let (mut file_entry, workflow_metadata) = match process_file(&path_buf, config) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        eprintln!("Failed to process file {}: {}", path, e);
+                        return Err(e);
+                    }
+                };
+                
+                // Preserve favorite status if file already exists in database
+                if let Ok(Some(existing_file)) = database::get_file_by_id(&pool_clone, &file_entry.id).await {
+                    file_entry.is_favorite = existing_file.is_favorite;
+                }
+
+                // **CRITICAL FIX: Save file entry to database**
+                if let Err(e) = database::upsert_file(&pool_clone, &file_entry).await {
+                    eprintln!("Failed to upsert file record for {}: {}", path, e);
+                    return Err(format!("Database error: {}", e));
+                }
+
+                // **Save workflow metadata if present**
+                if !workflow_metadata.is_empty() {
+                    for (i, parsed) in workflow_metadata.iter().enumerate() {
+                        let meta = crate::models::WorkflowMetadata {
+                            id: None,
+                            file_id: file_entry.id.clone(),
+                            sampler_index: i as i32,
+                            model_name: parsed.model_name.clone(),
+                            sampler_name: parsed.sampler_name.clone(),
+                            scheduler: parsed.scheduler.clone(),
+                            cfg: parsed.cfg,
+                            steps: parsed.steps,
+                            positive_prompt: Some(parsed.positive_prompt.clone()),
+                            negative_prompt: Some(parsed.negative_prompt.clone()),
+                            width: parsed.width,
+                            height: parsed.height,
+                        };
+                        
+                        if let Err(e) = database::insert_workflow_metadata(&pool_clone, &meta).await {
+                            eprintln!("Failed to insert workflow metadata for {}: {}", path, e);
+                        }
+                    }
+                }
+                
+                Ok((file_entry.has_workflow, workflow_metadata.len()))
+            });
+            
+            // Update stats based on result
+            match result {
+                Ok((has_workflow, metadata_count)) => {
                     let mut stats_guard = stats.lock().unwrap();
                     stats_guard.total_processed += 1;
-                    if file_entry.has_workflow {
+                    if has_workflow {
                         stats_guard.files_with_workflows += 1;
-                        if file_entry.sampler_count > 0 {
-                            stats_guard.metadata_extracted += 1;
+                        if metadata_count > 0 {
+                            stats_guard.metadata_extracted += metadata_count;
                         }
                     }
                 }

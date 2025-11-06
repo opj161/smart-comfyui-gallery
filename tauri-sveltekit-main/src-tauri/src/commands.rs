@@ -787,11 +787,32 @@ pub async fn upload_file(
     fs::copy(&source, &dest_path)
         .map_err(|e| format!("Failed to copy file: {}", e))?;
 
-    // Process the uploaded file
-    let file_entry = scanner::process_file(&dest_path, &scanner_config)?;
+    // Process the uploaded file (returns FileEntry and workflow metadata)
+    let (file_entry, workflow_metadata) = scanner::process_file(&dest_path, &scanner_config)?;
     
-    // Insert to database
+    // Insert file to database
     database::upsert_file(&pool, &file_entry).await?;
+    
+    // Insert workflow metadata if present
+    for (i, parsed) in workflow_metadata.iter().enumerate() {
+        let meta = crate::models::WorkflowMetadata {
+            id: None,
+            file_id: file_entry.id.clone(),
+            sampler_index: i as i32,
+            model_name: parsed.model_name.clone(),
+            sampler_name: parsed.sampler_name.clone(),
+            scheduler: parsed.scheduler.clone(),
+            cfg: parsed.cfg,
+            steps: parsed.steps,
+            positive_prompt: Some(parsed.positive_prompt.clone()),
+            negative_prompt: Some(parsed.negative_prompt.clone()),
+            width: parsed.width,
+            height: parsed.height,
+        };
+        
+        database::insert_workflow_metadata(&pool, &meta).await
+            .map_err(|e| format!("Failed to insert workflow metadata: {}", e))?;
+    }
     
     Ok(file_entry.id)
 }

@@ -70,6 +70,7 @@ pub struct ComfyUIWorkflowParser {
     format: WorkflowFormat,
     nodes_by_id: HashMap<String, Value>,
     links_map: HashMap<i64, (String, i64)>,
+    #[allow(dead_code)]
     file_path: String,
 }
 
