@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { store } from '$lib/store.svelte';
 	import * as api from '$lib/api';
+	import { convertFileSrc } from '@tauri-apps/api/core';
 
 	interface Props {
 		isOpen: boolean;
@@ -11,17 +12,39 @@
 	let workflowMetadata = $state<any>(null);
 	let isLoadingMetadata = $state(false);
 	let showMetadata = $state(false);
+	let thumbnailUrl = $state<string | null>(null);
+	let fullFileSrc = $state<string | null>(null);
 
 	const currentFile = $derived(store.files[store.currentLightboxIndex] || null);
 
-	const thumbnailUrl = $derived(currentFile ? `/api/thumbnail/${currentFile.id}` : null);
-
-	// Load metadata when file changes
+	// Load file URLs when current file changes
 	$effect(() => {
+		if (currentFile) {
+			loadFileUrls();
+		}
 		if (currentFile && showMetadata) {
 			loadMetadata();
 		}
 	});
+
+	async function loadFileUrls() {
+		if (!currentFile) return;
+		
+		try {
+			// Get thumbnail path and convert to asset:// URL
+			const thumbPath = await api.getThumbnailPath(currentFile.id);
+			if (thumbPath) {
+				thumbnailUrl = convertFileSrc(thumbPath);
+			}
+			
+			// Convert full file path for videos
+			if (currentFile.path) {
+				fullFileSrc = convertFileSrc(currentFile.path);
+			}
+		} catch (error) {
+			console.error('Failed to load file URLs:', error);
+		}
+	}
 
 	async function loadMetadata() {
 		if (!currentFile) return;
@@ -107,9 +130,17 @@
 		{/if}			<!-- Image -->
 			<div class="lightbox-image-container">
 				{#if currentFile.type === 'image'}
-					<img src={thumbnailUrl} alt={currentFile.name} class="lightbox-image" />
+					{#if thumbnailUrl}
+						<img src={thumbnailUrl} alt={currentFile.name} class="lightbox-image" />
+					{:else}
+						<div class="loading">Loading image...</div>
+					{/if}
 				{:else if currentFile.type === 'video'}
-					<video src={currentFile.path} controls class="lightbox-video"><track kind="captions" /></video>
+					{#if fullFileSrc}
+						<video src={fullFileSrc} controls class="lightbox-video"><track kind="captions" /></video>
+					{:else}
+						<div class="loading">Loading video...</div>
+					{/if}
 				{:else}
 					<div class="unsupported-type">Unsupported file type</div>
 				{/if}

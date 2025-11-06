@@ -2,6 +2,7 @@
   import type { FileEntry } from '$lib/types';
   import { store } from '$lib/store.svelte';
   import * as api from '$lib/api';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   
   interface Props {
     file: FileEntry;
@@ -22,9 +23,10 @@
   
   async function loadThumbnail() {
     try {
-      const url = await api.getThumbnailPath(file.id);
-      if (url) {
-        thumbnailUrl = url;
+      const filePath = await api.getThumbnailPath(file.id);
+      if (filePath) {
+        // Convert file system path to asset:// URL that Tauri can access
+        thumbnailUrl = convertFileSrc(filePath);
       }
       isLoading = false;
     } catch (error) {
