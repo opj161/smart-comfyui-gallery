@@ -5,6 +5,10 @@ mod parser;
 mod scanner;
 mod thumbnails;
 mod commands;
+mod config;
+mod security;
+mod cache;
+mod errors;
 
 use std::sync::{Arc, Mutex};
 use commands::AppState;
@@ -58,13 +62,21 @@ pub fn run() {
             commands::get_thumbnail_path,
             commands::health_check,
             commands::get_filter_options,
-            // New commands
+            // File operations
             commands::rename_file,
             commands::move_files,
             commands::search_files,
             commands::get_files_filtered,
             commands::create_folder,
             commands::get_config,
+            // Configuration
+            config::load_config,
+            config::save_config,
+            // File upload
+            commands::upload_file,
+            commands::upload_multiple_files,
+            // System checks
+            commands::check_ffmpeg,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

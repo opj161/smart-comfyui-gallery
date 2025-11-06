@@ -36,6 +36,7 @@ const PROMPT_NODE_TYPES: &[&str] = &[
     "CLIPTextEncodeSDXLRefiner",
 ];
 
+#[allow(dead_code)]
 const SCHEDULER_NODE_TYPES: &[&str] = &[
     "BasicScheduler",
     "KarrasScheduler",
@@ -43,6 +44,7 @@ const SCHEDULER_NODE_TYPES: &[&str] = &[
     "SgmUniformScheduler",
 ];
 
+#[allow(dead_code)]
 const SAMPLER_SELECT_NODE_TYPES: &[&str] = &["KSamplerSelect"];
 
 #[derive(Debug, Clone)]
@@ -68,6 +70,7 @@ pub struct ComfyUIWorkflowParser {
     format: WorkflowFormat,
     nodes_by_id: HashMap<String, Value>,
     links_map: HashMap<i64, (String, i64)>,
+    #[allow(dead_code)]
     file_path: String,
 }
 

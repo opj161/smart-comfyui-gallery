@@ -66,3 +66,23 @@ export interface SyncProgress {
 	status: 'processing' | 'complete' | 'error';
 	message?: string;
 }
+
+export interface AppConfig {
+	output_path: string;
+	input_path: string | null;
+	thumbnail_size: number;
+	theme: string;
+	max_cache_size_mb: number;
+}
+
+export interface UploadProgress {
+	current: number;
+	total: number;
+	filename: string;
+}
+
+export interface UploadComplete {
+	total: number;
+	success: number;
+	failed: number;
+}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { store } from '$lib/store.svelte';
 	import * as api from '$lib/api';
+	import { convertFileSrc } from '@tauri-apps/api/core';
 
 	interface Props {
 		isOpen: boolean;
@@ -11,17 +12,40 @@
 	let workflowMetadata = $state<any>(null);
 	let isLoadingMetadata = $state(false);
 	let showMetadata = $state(false);
+	let thumbnailUrl = $state<string | null>(null);
+	let fullFileSrc = $state<string | null>(null);
 
 	const currentFile = $derived(store.files[store.currentLightboxIndex] || null);
 
-	const thumbnailUrl = $derived(currentFile ? `/api/thumbnail/${currentFile.id}` : null);
-
-	// Load metadata when file changes
+	// Load file URLs when current file changes
 	$effect(() => {
+		if (currentFile) {
+			loadFileUrls();
+		}
 		if (currentFile && showMetadata) {
 			loadMetadata();
 		}
 	});
+
+	async function loadFileUrls() {
+		if (!currentFile) return;
+		
+		try {
+			// Convert full file path for BOTH images and videos
+			// In lightbox, we want to show the full-resolution file, not the thumbnail
+			if (currentFile.path) {
+				fullFileSrc = convertFileSrc(currentFile.path);
+			}
+			
+			// Keep thumbnail as fallback for images
+			const thumbPath = await api.getThumbnailPath(currentFile.id);
+			if (thumbPath) {
+				thumbnailUrl = convertFileSrc(thumbPath);
+			}
+		} catch (error) {
+			console.error('Failed to load file URLs:', error);
+		}
+	}
 
 	async function loadMetadata() {
 		if (!currentFile) return;
@@ -79,8 +103,15 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isOpen && currentFile}
-	<div class="lightbox-overlay" onclick={handleBackdropClick}>
-		<div class="lightbox-container">
+	<div
+		class="lightbox-overlay"
+		onclick={handleBackdropClick}
+		onkeydown={(e) => e.key === 'Escape' && store.closeLightbox()}
+		role="button"
+		tabindex="0"
+		aria-label="Close lightbox"
+	>
+		<div class="lightbox-container" role="dialog" aria-modal="true">
 			<!-- Close Button -->
 			<button class="lightbox-close" onclick={() => store.closeLightbox()} aria-label="Close">
 				<span class="close-icon">×</span>
@@ -100,9 +131,19 @@
 		{/if}			<!-- Image -->
 			<div class="lightbox-image-container">
 				{#if currentFile.type === 'image'}
-					<img src={thumbnailUrl} alt={currentFile.name} class="lightbox-image" />
+					{#if fullFileSrc}
+						<img src={fullFileSrc} alt={currentFile.name} class="lightbox-image" />
+					{:else if thumbnailUrl}
+						<img src={thumbnailUrl} alt={currentFile.name} class="lightbox-image" />
+					{:else}
+						<div class="loading">Loading image...</div>
+					{/if}
 				{:else if currentFile.type === 'video'}
-					<video src={currentFile.path} controls class="lightbox-video"><track kind="captions" /></video>
+					{#if fullFileSrc}
+						<video src={fullFileSrc} controls class="lightbox-video"><track kind="captions" /></video>
+					{:else}
+						<div class="loading">Loading video...</div>
+					{/if}
 				{:else}
 					<div class="unsupported-type">Unsupported file type</div>
 				{/if}

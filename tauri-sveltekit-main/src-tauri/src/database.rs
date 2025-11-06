@@ -257,6 +257,7 @@ pub async fn batch_set_favorite(pool: &SqlitePool, file_ids: &[String], favorite
 }
 
 /// Insert workflow metadata
+#[allow(dead_code)]
 pub async fn insert_workflow_metadata(pool: &SqlitePool, metadata: &WorkflowMetadata) -> Result<(), String> {
     sqlx::query(
         "INSERT OR REPLACE INTO workflow_metadata 

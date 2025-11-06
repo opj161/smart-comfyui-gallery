@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production build
+build/
+dist/
+.svelte-kit/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Rust
+src-tauri/target/
+Cargo.lock
+
+# Generated files
+src-tauri/gen/
+
+# Temporary and cache files
+*.tmp
+.cache/
+*_cache/
+
+# Test data (optional - uncomment if you don't want to commit test files)
+# test_data/
+
+.docs/

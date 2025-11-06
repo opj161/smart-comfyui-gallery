@@ -2,6 +2,7 @@
   import type { FileEntry } from '$lib/types';
   import { store } from '$lib/store.svelte';
   import * as api from '$lib/api';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   
   interface Props {
     file: FileEntry;
@@ -22,9 +23,10 @@
   
   async function loadThumbnail() {
     try {
-      const url = await api.getThumbnailPath(file.id);
-      if (url) {
-        thumbnailUrl = url;
+      const filePath = await api.getThumbnailPath(file.id);
+      if (filePath) {
+        // Convert file system path to asset:// URL that Tauri can access
+        thumbnailUrl = convertFileSrc(filePath);
       }
       isLoading = false;
     } catch (error) {
@@ -49,7 +51,7 @@
     }
   }
   
-  function handleClick(event: MouseEvent) {
+  function handleClick(event: MouseEvent | KeyboardEvent) {
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       event.preventDefault();
       store.toggleFileSelection(file.id);
@@ -67,8 +69,10 @@
   class="gallery-item"
   class:selected={isSelected}
   onclick={handleClick}
+  onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick(e)}
   role="button"
   tabindex="0"
+  aria-label={`Gallery item ${file.name}`}
 >
   <!-- Selection Checkbox -->
   <div class="selection-checkbox">
@@ -263,6 +267,7 @@
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     line-height: 1.3;
   }

@@ -95,6 +95,7 @@ pub struct PaginatedFiles {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct AppConfig {
     pub output_path: String,
     pub input_path: Option<String>,
